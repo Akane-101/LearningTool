@@ -271,6 +271,19 @@ textarea {
   margin-top: 0.25rem;
 }
 
+.subhead-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.subhead-row .subhead {
+  margin: 0;
+}
+
 .camera-panel {
   margin: 0.75rem 0 1rem;
   padding: 0.75rem;
@@ -412,11 +425,16 @@ textarea {
 }
 
 .figure-layer {
-  z-index: 1;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #fffdf8;
+  pointer-events: auto;
+}
+
+.figure-layer.overlay {
+  background: transparent;
 }
 
 .figure-layer svg {
@@ -425,19 +443,55 @@ textarea {
   display: block;
 }
 
-.figure-layer.hide-labels text {
-  opacity: 0;
-}
-
 .photo-layer {
   z-index: 1;
   object-fit: contain;
   background: #111;
+  pointer-events: none;
 }
 
 .draw-canvas {
-  z-index: 2;
+  z-index: 3;
   cursor: crosshair;
+}
+
+.draw-canvas.passthrough {
+  pointer-events: none;
+}
+
+.figure-layer .geo-vertex {
+  cursor: grab;
+  fill: #0f6b4c;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.figure-layer .geo-vertex:hover {
+  fill: #c45c26;
+}
+
+.figure-layer .geo-extra {
+  fill: #1a8f66;
+  stroke-width: 2;
+}
+
+.figure-layer .geo-edge {
+  cursor: grab;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+}
+
+.figure-layer .geo-seg {
+  stroke-width: 22;
+  stroke: rgba(30, 224, 160, 0.01);
+  pointer-events: stroke;
+}
+
+.figure-layer.dragging,
+.figure-layer.dragging .geo-vertex,
+.figure-layer.dragging .geo-edge {
+  cursor: grabbing;
 }
 
 

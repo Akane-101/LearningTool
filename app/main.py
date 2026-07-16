@@ -7,7 +7,14 @@ from pathlib import Path
 from .models import AiReplyRequest, AiStartRequest, SampleProblem
 from .guide import SAMPLE_PROBLEMS
 from .ocr import ocr_image_bytes
-from .config import api_key_configured, DEEPSEEK_MODEL
+from .config import (
+    api_key_configured,
+    vision_configured,
+    vision_provider,
+    DEEPSEEK_MODEL,
+    DASHSCOPE_VL_MODEL,
+)
+from .vision import analyze_geometry_image
 from .ai_guide import get_session, reply_session, start_session as ai_start_session
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,6 +44,9 @@ async def health():
         "status": "ok",
         "ai_configured": api_key_configured(),
         "model": DEEPSEEK_MODEL,
+        "vision_configured": vision_configured(),
+        "vision_provider": vision_provider(),
+        "vision_model": DASHSCOPE_VL_MODEL,
     }
 
 
@@ -47,7 +57,7 @@ async def list_samples():
 
 @app.post("/api/ocr")
 async def ocr_upload(file: UploadFile = File(...)):
-    """上传 / 拍照 / 粘贴的题目图片，OCR 成文字。"""
+    """上传题目图片：OCR 文字 + 百炼看图（几何结构）。"""
     data = await file.read()
     if len(data) > 12 * 1024 * 1024:
         return {
@@ -55,7 +65,69 @@ async def ocr_upload(file: UploadFile = File(...)):
             "text": "",
             "message": "图片太大了（超过 12MB），请压缩后再试。",
         }
-    return ocr_image_bytes(data, filename=file.filename)
+
+    try:
+        ocr_raw = ocr_image_bytes(data, filename=file.filename)
+        ocr = ocr_raw.model_dump() if hasattr(ocr_raw, "model_dump") else dict(ocr_raw)
+    except Exception as exc:
+        ocr = {
+            "ok": False,
+            "text": "",
+            "message": f"文字识别失败：{exc}",
+            "lines": [],
+            "confidence": 0.0,
+            "engine": None,
+        }
+
+    try:
+        vision = analyze_geometry_image(data, mime=file.content_type)
+    except Exception as exc:
+        vision = {
+            "ok": False,
+            "message": f"看图失败：{exc}",
+            "problem_text": "",
+            "geometry_description": "",
+            "figure": None,
+        }
+
+    text = (ocr.get("text") or "").strip()
+    geom = (vision.get("geometry_description") or "").strip()
+    v_text = (vision.get("problem_text") or "").strip()
+
+    if vision.get("ok") and v_text:
+        if not text or len(v_text) >= max(20, int(len(text) * 0.7)):
+            text = v_text
+        elif v_text not in text:
+            text = f"{text}\n\n{v_text}"
+    if vision.get("ok") and geom and geom not in text:
+        text = f"{text}\n\n【图形】{geom}".strip()
+
+    ok = bool(ocr.get("ok") or vision.get("ok"))
+    if vision.get("ok"):
+        message = "已识别文字，并看懂图中的几何图形"
+    elif ocr.get("ok"):
+        # 文字已出；看图失败用简短说明，不重复粘贴 API 原文
+        vision_msg = (vision.get("message") or "").strip()
+        if vision_msg:
+            message = f"文字已识别。看图未成功：{vision_msg}"
+        else:
+            message = ocr.get("message") or "文字已识别"
+    else:
+        message = vision.get("message") or ocr.get("message") or "识别失败"
+
+    return {
+        "ok": ok,
+        "text": text,
+        "message": message,
+        "lines": ocr.get("lines") or [],
+        "confidence": ocr.get("confidence") or 0.0,
+        "filename": file.filename,
+        "engine": ocr.get("engine"),
+        "geometry_description": geom,
+        "figure": vision.get("figure"),
+        "vision_ok": bool(vision.get("ok")),
+        "vision_message": vision.get("message") or "",
+    }
 
 
 @app.post("/api/ai/start")
@@ -68,7 +140,12 @@ async def ai_start(body: AiStartRequest):
         }
     try:
         return ai_start_session(
-            body.text, body.lang, body.image_base64, body.image_mime
+            body.text,
+            body.lang,
+            body.image_base64,
+            body.image_mime,
+            body.geometry_description,
+            body.figure_data,
         )
     except RuntimeError as exc:
         return {"ok": False, "message": str(exc)}

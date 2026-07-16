@@ -8,7 +8,127 @@ from typing import Any, Optional
 from .parser import parse_problem_text
 
 
-def normalize_figure(raw: Any) -> Optional[dict[str, Any]]:
+def _parse_point(raw: Any) -> Optional[tuple[float, float]]:
+    """解析归一化或像素坐标点，返回 (x, y)。"""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        x = float(raw.get("x"))
+        y = float(raw.get("y"))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(x) or not math.isfinite(y):
+        return None
+    return (x, y)
+
+
+def _normalize_points_map(
+    raw_points: Any,
+    img_w: Optional[float] = None,
+    img_h: Optional[float] = None,
+) -> dict[str, dict[str, float]]:
+    """把 points 规范为整图像素比例 0~1（保留在图中的绝对位置，不做裁剪居中）。"""
+    if not isinstance(raw_points, dict):
+        return {}
+    parsed: dict[str, tuple[float, float]] = {}
+    for k, v in raw_points.items():
+        name = str(k).upper().replace("∠", "").strip()[:3]
+        pt = _parse_point(v)
+        if name and pt:
+            parsed[name] = pt
+    if len(parsed) < 2:
+        return {}
+
+    xs = [p[0] for p in parsed.values()]
+    ys = [p[1] for p in parsed.values()]
+    max_x, max_y = max(xs), max(ys)
+
+    # 像素坐标 → 除以整图宽高（不要用点集 min-max，否则叠原图会对不齐）
+    if max_x > 1.5 or max_y > 1.5:
+        dw = float(img_w) if img_w and img_w > 1 else max(max_x, 1.0)
+        dh = float(img_h) if img_h and img_h > 1 else max(max_y, 1.0)
+        return {
+            name: {
+                "x": min(1.0, max(0.0, x / dw)),
+                "y": min(1.0, max(0.0, y / dh)),
+            }
+            for name, (x, y) in parsed.items()
+        }
+
+    return {
+        name: {"x": min(1.0, max(0.0, x)), "y": min(1.0, max(0.0, y))}
+        for name, (x, y) in parsed.items()
+    }
+
+
+def layout_points(
+    figure: dict[str, Any],
+    width: int = 360,
+    height: int = 280,
+    pad: float = 28.0,
+    mode: str = "fit",
+) -> dict[str, tuple[float, float]]:
+    """把 figure.points（整图 0~1）映射到画布像素。
+
+    mode:
+      - fit: 把点集裁剪居中（聊天小图更好看）
+      - image: 按整图比例铺满画布（与 object-fit:contain 叠原图一致）
+    """
+    verts = figure.get("vertices") or ["A", "B", "C"]
+    a_name, b_name, c_name = verts[0], verts[1], verts[2]
+    points = figure.get("points") or {}
+
+    pts: dict[str, tuple[float, float]] = {}
+    if isinstance(points, dict) and len(points) >= 3 and all(
+        n in points for n in (a_name, b_name, c_name)
+    ):
+        if mode == "image":
+            for name, p in points.items():
+                pts[str(name)] = (float(p["x"]) * width, float(p["y"]) * height)
+        else:
+            xs = [float(points[n]["x"]) for n in points]
+            ys = [float(points[n]["y"]) for n in points]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            span_x = max(max_x - min_x, 0.08)
+            span_y = max(max_y - min_y, 0.08)
+            usable_w = width - 2 * pad
+            usable_h = height - 2 * pad
+            scale = min(usable_w / span_x, usable_h / span_y)
+            ox = pad + (usable_w - span_x * scale) / 2
+            oy = pad + (usable_h - span_y * scale) / 2
+            for name, p in points.items():
+                pts[str(name)] = (
+                    ox + (float(p["x"]) - min_x) * scale,
+                    oy + (float(p["y"]) - min_y) * scale,
+                )
+    else:
+        pts = {
+            a_name: (60.0, 220.0),
+            b_name: (180.0, 50.0),
+            c_name: (300.0, 220.0),
+        }
+
+    for ep in figure.get("extra_points") or []:
+        name = ep.get("name")
+        on = str(ep.get("on") or "")
+        if not name or len(on) < 2:
+            continue
+        if name in pts:
+            continue
+        p1, p2 = on[0], on[1]
+        if p1 in pts and p2 in pts:
+            t = float(ep.get("ratio", 0.5))
+            pts[name] = _lerp(pts[p1], pts[p2], t)
+
+    return pts
+
+
+def normalize_figure(
+    raw: Any,
+    img_w: Optional[float] = None,
+    img_h: Optional[float] = None,
+) -> Optional[dict[str, Any]]:
     if not isinstance(raw, dict):
         return None
     ftype = str(raw.get("type") or "triangle").lower()
@@ -33,19 +153,36 @@ def normalize_figure(raw: Any) -> Optional[dict[str, Any]]:
     if highlight:
         highlight = str(highlight).upper().replace("∠", "").replace("ANGLE", "").strip()[:3]
 
+    # 合并 points + 带坐标的辅助点，再统一归一化
+    raw_points: dict[str, Any] = {}
+    if isinstance(raw.get("points"), dict):
+        raw_points.update(raw.get("points") or {})
+
     extra_points = []
     for p in raw.get("extra_points") or []:
         if not isinstance(p, dict):
             continue
         name = str(p.get("name") or "").upper()[:3]
-        on = str(p.get("on") or "").upper()
+        on = str(p.get("on") or "").upper().replace(" ", "")
         try:
             ratio = float(p.get("ratio", 0.5))
         except (TypeError, ValueError):
             ratio = 0.5
-        ratio = min(0.9, max(0.1, ratio))
+        ratio = min(0.92, max(0.08, ratio))
         if name and len(on) >= 2:
             extra_points.append({"name": name, "on": on[:2], "ratio": ratio})
+        pt = _parse_point(p)
+        if name and pt and name not in raw_points:
+            raw_points[name] = {"x": pt[0], "y": pt[1]}
+
+    points = _normalize_points_map(raw_points, img_w=img_w, img_h=img_h)
+
+    # 保证三个主顶点有坐标；缺则用默认（仅兜底）
+    for i, name in enumerate(vertices):
+        if name not in points:
+            defaults = [(0.15, 0.78), (0.50, 0.18), (0.85, 0.78)]
+            x, y = defaults[min(i, 2)]
+            points[name] = {"x": x, "y": y}
 
     segments = []
     for s in raw.get("segments") or []:
@@ -57,6 +194,7 @@ def normalize_figure(raw: Any) -> Optional[dict[str, Any]]:
     return {
         "type": "triangle",
         "vertices": vertices,
+        "points": points,
         "angle_labels": angle_labels,
         "side_labels": {str(k): str(v) for k, v in side_labels.items()},
         "highlight": highlight,
@@ -88,6 +226,11 @@ def figure_from_problem_text(text: str) -> Optional[dict[str, Any]]:
     return {
         "type": "triangle",
         "vertices": ["A", "B", "C"],
+        "points": {
+            "A": {"x": 0.15, "y": 0.78},
+            "B": {"x": 0.50, "y": 0.18},
+            "C": {"x": 0.85, "y": 0.78},
+        },
         "angle_labels": {k: v for k, v in labels.items() if v},
         "side_labels": {},
         "highlight": highlight,
@@ -110,21 +253,7 @@ def _angle_at(vertex: tuple[float, float], p_prev: tuple[float, float], p_next: 
 def render_triangle_svg(figure: dict[str, Any], width: int = 360, height: int = 280) -> str:
     verts = figure.get("vertices") or ["A", "B", "C"]
     a_name, b_name, c_name = verts[0], verts[1], verts[2]
-
-    # 顶点坐标（屏幕坐标，y 向下）
-    pts = {
-        a_name: (60.0, 220.0),
-        b_name: (180.0, 50.0),
-        c_name: (300.0, 220.0),
-    }
-
-    for ep in figure.get("extra_points") or []:
-        on = ep["on"]
-        if len(on) < 2:
-            continue
-        p1, p2 = on[0], on[1]
-        if p1 in pts and p2 in pts:
-            pts[ep["name"]] = _lerp(pts[p1], pts[p2], ep.get("ratio", 0.5))
+    pts = layout_points(figure, width=width, height=height)
 
     # 三角形边
     poly = f"{pts[a_name][0]},{pts[a_name][1]} {pts[b_name][0]},{pts[b_name][1]} {pts[c_name][0]},{pts[c_name][1]}"

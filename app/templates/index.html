@@ -12,7 +12,7 @@
       <div class="hero-row">
         <div>
           <h1 data-i18n="title">AI 带你一步一步解题</h1>
-          <p class="sub" data-i18n="subtitle">拍照 / 粘贴图片 / 输入文字 → DeepSeek 在线逐步引导</p>
+          <p class="sub" data-i18n="subtitle">拍照看图 + 文字 → 百炼识几何图，DeepSeek 逐步引导</p>
         </div>
         <div class="lang-switch">
           <button type="button" id="btnLangZh" class="lang-btn active" data-lang="zh">中文</button>
@@ -36,6 +36,7 @@
             <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden />
           </label>
           <button type="button" id="btnOpenCamera" class="btn ghost" data-i18n="openCamera">打开摄像头</button>
+          <button type="button" id="btnClearImage" class="btn ghost" data-i18n="clearImage">清空图片</button>
         </div>
         <img id="preview" class="preview" alt="" hidden />
         <p id="ocrStatus" class="meta"></p>
@@ -49,7 +50,10 @@
         </div>
       </div>
 
-      <h2 class="subhead" data-i18n="problemLabel">题目文字（可修改，也可包含你已有的做题过程）</h2>
+      <div class="subhead-row">
+        <h2 class="subhead" data-i18n="problemLabel">题目文字（可修改，也可包含你已有的做题过程）</h2>
+        <button type="button" id="btnClearText" class="btn ghost" data-i18n="clearText">清空文字</button>
+      </div>
       <textarea id="problemText" rows="5"></textarea>
       <div class="samples" id="samples"></div>
       <div class="actions">
@@ -64,19 +68,21 @@
       <div id="workbench" class="workbench" hidden>
         <div class="workbench-head">
           <h3 data-i18n="workbenchTitle">几何画板</h3>
-          <p class="meta" data-i18n="workbenchHint">可在图上涂画标注 · 可切换底图</p>
+          <p class="meta" data-i18n="workbenchHint">拖动点/边/虚线 · 可叠原图或只看原图 · 拖动时可还原</p>
         </div>
         <div class="workbench-toolbar">
-          <button type="button" id="toolPen" class="tool-btn active" data-i18n="toolPen">画笔</button>
+          <button type="button" id="toolMove" class="tool-btn active" data-i18n="toolMove">拖动</button>
+          <button type="button" id="toolResetGeo" class="tool-btn" data-i18n="toolResetGeo" hidden>还原图形</button>
+          <button type="button" id="toolPen" class="tool-btn" data-i18n="toolPen">画笔</button>
           <button type="button" id="toolEraser" class="tool-btn" data-i18n="toolEraser">橡皮</button>
           <button type="button" id="toolClear" class="tool-btn" data-i18n="toolClear">清空标注</button>
-          <button type="button" id="toolToggleLabels" class="tool-btn" data-i18n="toolLabels">隐藏/显示角度</button>
           <button type="button" id="toolBgFigure" class="tool-btn active" data-i18n="toolBgFigure">示意图</button>
-          <button type="button" id="toolBgPhoto" class="tool-btn" data-i18n="toolBgPhoto">原题照片</button>
+          <button type="button" id="toolBgPhoto" class="tool-btn" data-i18n="toolBgPhoto" hidden>叠加原图</button>
+          <button type="button" id="toolBgPhotoOnly" class="tool-btn" data-i18n="toolBgPhotoOnly" hidden>只看原图</button>
         </div>
         <div class="workbench-stage" id="workbenchStage">
-          <div id="figureLayer" class="figure-layer"></div>
           <img id="photoLayer" class="photo-layer" alt="" hidden />
+          <div id="figureLayer" class="figure-layer"></div>
           <canvas id="drawCanvas" class="draw-canvas"></canvas>
         </div>
       </div>

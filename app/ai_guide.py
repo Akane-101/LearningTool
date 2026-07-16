@@ -1,7 +1,11 @@
-"""DeepSeek AI 逐步引导解题（中英双语）。"""
+"""DeepSeek AI 逐步引导解题（中英双语）。
+
+看图：DeepSeek 官方 API 不接受图片；几何图由阿里云百炼（Qwen-VL）看图后结构化，再交给 DeepSeek 引导与画板。
+"""
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import uuid
@@ -13,10 +17,10 @@ from .config import (
     DEEPSEEK_API_KEY,
     DEEPSEEK_BASE_URL,
     DEEPSEEK_MODEL,
-    DEEPSEEK_VISION_MODEL,
     api_key_configured,
 )
-from .figure import build_figure_payload
+from .figure import build_figure_payload, normalize_figure
+from .vision import analyze_geometry_image
 
 SYSTEM_PROMPTS = {
     "zh": """你是一位耐心的初中数学老师，辅导学生解数学题（以几何角度题、三角形题为主，也覆盖其他初中数学题型）。
@@ -28,7 +32,7 @@ SYSTEM_PROMPTS = {
 4. **能识别并接续学生已有的做题过程。**
 5. 语言简单、清楚，适合初中生。
 6. 不要直接泄露最终答案，除非学生明确请求完整解答。
-7. **几何题尽量配示意图。** 当题目涉及三角形/角度，且你在给方向或提示时，填写 figure 字段，便于系统画图。第一次引导、学生卡住要提示时尤其要给 figure。
+7. **几何题尽量配示意图。** 若题目里已有「根据原题图片识别的图形」，你的 figure 必须严格按该描述还原（点、线、已知角、所求角），不要另画一张无关的图。
 
 每次回复必须是合法 JSON（不要 markdown 代码块），格式：
 {
@@ -45,6 +49,7 @@ figure 对象（几何题需要画图时填写，否则 null）：
 {
   "type": "triangle",
   "vertices": ["A", "B", "C"],
+  "points": {"A": {"x": 0.15, "y": 0.75}, "B": {"x": 0.50, "y": 0.18}, "C": {"x": 0.88, "y": 0.78}},
   "angle_labels": {"A": "50°", "B": "60°", "C": "?"},
   "highlight": "C",
   "extra_points": [{"name": "D", "on": "BC", "ratio": 0.5}],
@@ -53,6 +58,7 @@ figure 对象（几何题需要画图时填写，否则 null）：
 }
 
 说明：
+- points 用 0~1 坐标（左上原点，y 向下），必须贴近原题图形形状，不要总画成等腰
 - angle_labels 填已知角度或 "?" 表示所求
 - highlight 填需要强调的角（顶点字母）
 - 有角平分线/中点时用 extra_points + segments
@@ -67,7 +73,7 @@ Teaching principles:
 4. Recognize and continue from the student's existing work.
 5. Use simple language.
 6. Don't reveal the final answer unless asked for the full solution.
-7. **For geometry, include a figure when helpful.** Especially on the first guidance turn and when the student asks for a hint.
+7. **For geometry, include a figure when helpful.** If the problem includes a section "Geometry from the original photo", your figure MUST match that description (points, lines, known/unknown angles). Do not invent a different diagram.
 
 Each reply must be valid JSON (no markdown), format:
 {
@@ -84,6 +90,7 @@ figure object when drawing is needed:
 {
   "type": "triangle",
   "vertices": ["A", "B", "C"],
+  "points": {"A": {"x": 0.15, "y": 0.75}, "B": {"x": 0.50, "y": 0.18}, "C": {"x": 0.88, "y": 0.78}},
   "angle_labels": {"A": "50°", "B": "60°", "C": "?"},
   "highlight": "C",
   "extra_points": [{"name": "D", "on": "BC", "ratio": 0.5}],
@@ -91,7 +98,7 @@ figure object when drawing is needed:
   "caption": "Mark known angles, find angle C"
 }
 
-Rules: do not invent data not in the problem; use "?" for unknowns.
+Rules: points use 0~1 coords matching the real figure shape; do not invent data; use "?" for unknowns.
 """,
 }
 
@@ -175,21 +182,16 @@ def _message_text(msg: Any) -> str:
     return str(reasoning)
 
 
-def _call_ai(messages: list[dict[str, Any]], use_vision: bool = False) -> dict[str, Any]:
+def _call_ai(messages: list[dict[str, Any]]) -> dict[str, Any]:
     client = _client()
-    model = DEEPSEEK_VISION_MODEL if use_vision else DEEPSEEK_MODEL
     try:
         resp = client.chat.completions.create(
-            model=model,
+            model=DEEPSEEK_MODEL,
             messages=messages,
             temperature=0.3,
             max_tokens=800,
         )
     except APIStatusError as exc:
-        # 视觉不支持时自动降级为纯文字
-        if use_vision and exc.status_code in (400, 422):
-            text_only_messages = _strip_images(messages)
-            return _call_ai(text_only_messages, use_vision=False)
         raise RuntimeError(_friendly_api_error(exc)) from exc
     except Exception as exc:
         raise RuntimeError(_friendly_api_error(exc)) from exc
@@ -207,14 +209,21 @@ def _call_ai(messages: list[dict[str, Any]], use_vision: bool = False) -> dict[s
     return data
 
 
-def _with_figure(ai: dict[str, Any], problem_text: str, force_fallback: bool = False) -> dict[str, Any]:
-    """给 AI 回复附上可展示的 SVG。"""
-    fig_payload = build_figure_payload(ai.get("figure"), problem_text if force_fallback else "")
+def _attach_figure(
+    ai: dict[str, Any],
+    problem_text: str,
+    preferred_figure: Optional[dict[str, Any]] = None,
+    force_fallback: bool = False,
+) -> dict[str, Any]:
+    """优先用看图得到的 figure，其次 AI 的 figure，再文字兜底。"""
+    raw_fig = preferred_figure or ai.get("figure")
+    fig_payload = build_figure_payload(raw_fig, problem_text if force_fallback else "")
     if fig_payload is None and force_fallback:
         fig_payload = build_figure_payload(None, problem_text)
     if fig_payload:
         ai = {
             **ai,
+            "figure": fig_payload.get("figure") or raw_fig,
             "figure_svg": fig_payload["svg"],
             "figure_caption": fig_payload["caption"],
             "figure_data": fig_payload.get("figure"),
@@ -222,21 +231,53 @@ def _with_figure(ai: dict[str, Any], problem_text: str, force_fallback: bool = F
     return ai
 
 
-def _strip_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """把含图片的 content 数组降级为纯文字。"""
-    result = []
-    for msg in messages:
-        content = msg.get("content")
-        if isinstance(content, list):
-            text_parts = [p.get("text", "") for p in content if p.get("type") == "text"]
-            result.append({**msg, "content": "\n".join(text_parts)})
-        else:
-            result.append(msg)
-    return result
-
-
 def _lang_prefixed(lang: str, zh: str, en: str) -> str:
     return zh if lang == "zh" else en
+
+
+def _resolve_vision(
+    problem_text: str,
+    lang: str,
+    image_base64: Optional[str],
+    image_mime: Optional[str],
+    geometry_description: Optional[str],
+    figure_data: Optional[dict[str, Any]],
+) -> tuple[str, str, Optional[dict[str, Any]], Optional[str]]:
+    """返回 (enriched_text, geometry_description, vision_figure, vision_note)。"""
+    geom = (geometry_description or "").strip()
+    vision_figure = normalize_figure(figure_data) if figure_data else None
+    vision_note = None
+
+    need_vision = bool(image_base64) and (not geom or not vision_figure)
+    if need_vision:
+        try:
+            raw = base64.b64decode(image_base64)
+        except Exception:
+            raw = b""
+        if raw:
+            result = analyze_geometry_image(raw, image_mime, lang=lang)
+            if result.get("ok"):
+                if not geom:
+                    geom = (result.get("geometry_description") or "").strip()
+                if not vision_figure:
+                    vision_figure = result.get("figure")
+                vision_note = result.get("message")
+                vt = (result.get("problem_text") or "").strip()
+                if vt and (not problem_text.strip() or len(vt) > len(problem_text.strip()) * 0.8):
+                    # 看图题干更完整时并入
+                    if vt not in problem_text:
+                        problem_text = vt if not problem_text.strip() else f"{problem_text.strip()}\n\n{vt}"
+            else:
+                vision_note = result.get("message")
+
+    if geom:
+        marker_zh = "【根据原题图片识别的图形】"
+        marker_en = "[Geometry from the original photo]"
+        marker = marker_en if lang == "en" else marker_zh
+        if marker not in problem_text and geom not in problem_text:
+            problem_text = f"{problem_text.strip()}\n\n{marker}\n{geom}"
+
+    return problem_text.strip(), geom, vision_figure, vision_note
 
 
 def start_session(
@@ -244,47 +285,50 @@ def start_session(
     lang: str = "zh",
     image_base64: Optional[str] = None,
     image_mime: Optional[str] = None,
+    geometry_description: Optional[str] = None,
+    figure_data: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     session_id = str(uuid.uuid4())
     system_prompt = SYSTEM_PROMPTS.get(lang, SYSTEM_PROMPTS["zh"])
 
-    has_image = bool(image_base64)
-    use_vision = has_image
+    enriched, geom, vision_figure, vision_note = _resolve_vision(
+        problem_text,
+        lang,
+        image_base64,
+        image_mime,
+        geometry_description,
+        figure_data,
+    )
 
     if lang == "en":
         text_part = (
             f"Here is the problem. Please give only a general direction, not too detailed:\n\n"
-            f"{problem_text.strip()}\n\n"
+            f"{enriched}\n\n"
             "Note: if the text already contains the student's partial solution, first identify "
-            "where they got to, then continue from their reasoning — don't make them start over."
+            "where they got to, then continue from their reasoning — don't make them start over. "
+            "If a geometry description from the photo is included, base your figure on it."
         )
-        if has_image:
-            text_part += "\n\nI've also attached a photo of the problem (it may include a geometry figure). Please look at the image carefully to understand the full problem."
     else:
         text_part = (
-            f"题目如下，请只给一个大致思路方向，不要拆太细：\n\n{problem_text.strip()}\n\n"
+            f"题目如下，请只给一个大致思路方向，不要拆太细：\n\n{enriched}\n\n"
             "注意：如果题目文字里已经包含学生写的部分解答过程，请先识别他做到哪一步，"
             "接着他的思路往下引导，不要让他重头来。"
+            "若已有「根据原题图片识别的图形」，figure 必须按该描述画，不要另画无关图形。"
         )
-        if has_image:
-            text_part += "\n\n我还附上了题目的照片（可能包含几何图形），请仔细看图，结合图片理解完整题目。"
-
-    if has_image:
-        mime = image_mime or "image/jpeg"
-        user_content: Any = [
-            {"type": "text", "text": text_part},
-            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_base64}"}},
-        ]
-    else:
-        user_content = text_part
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
+        {"role": "user", "content": text_part},
     ]
-    ai = _call_ai(messages, use_vision=use_vision)
-    # 第一次引导：尽量给示意图（AI 没给 figure 时用题目文字兜底）
-    ai = _with_figure(ai, problem_text.strip(), force_fallback=True)
+    ai = _call_ai(messages)
+    # 有原题看图结果时优先用它画板；否则尽量用 AI / 文字兜底
+    preferred = vision_figure
+    ai = _attach_figure(
+        ai,
+        enriched,
+        preferred_figure=preferred,
+        force_fallback=not preferred,
+    )
     messages.append({"role": "assistant", "content": json.dumps(
         {k: v for k, v in ai.items() if k not in ("figure_svg", "figure_caption", "figure_data")},
         ensure_ascii=False,
@@ -292,10 +336,12 @@ def start_session(
 
     session = {
         "session_id": session_id,
-        "problem_text": problem_text.strip(),
+        "problem_text": enriched,
         "messages": messages,
         "lang": lang,
-        "has_image": has_image,
+        "has_image": bool(image_base64),
+        "geometry_description": geom,
+        "vision_figure": vision_figure,
         "completed": bool(ai.get("completed")),
         "final_solution": ai.get("final_solution") or "",
         "turns": 1,
@@ -312,7 +358,9 @@ def start_session(
         "final_solution": session["final_solution"],
         "figure_svg": ai.get("figure_svg"),
         "figure_caption": ai.get("figure_caption"),
-        "figure_data": ai.get("figure_data"),
+        "figure_data": ai.get("figure_data") or vision_figure,
+        "geometry_description": geom,
+        "vision_note": vision_note,
     }
 
 
@@ -343,8 +391,8 @@ def reply_session(
     if want_hint and not student_answer.strip():
         user_content = _lang_prefixed(
             lang,
-            "我卡住了，请给一个更具体一点的提示，并尽量在 figure 里给出示意图（标已知角和所求角），但不要直接给出最终答案。",
-            "I'm stuck. Please give a more specific hint and include a figure object with known/unknown angles, but don't reveal the final answer.",
+            "我卡住了，请给一个更具体一点的提示，并尽量在 figure 里给出示意图（必须符合原题图片识别的图形），但不要直接给出最终答案。",
+            "I'm stuck. Please give a more specific hint and include a figure matching the photo geometry, but don't reveal the final answer.",
         )
     else:
         ans = student_answer.strip()
@@ -365,8 +413,18 @@ def reply_session(
 
     messages.append({"role": "user", "content": user_content})
     ai = _call_ai(messages)
-    # 学生要提示时强制尽量出图；其他时候有 figure 就渲染
-    ai = _with_figure(ai, session.get("problem_text", ""), force_fallback=want_hint)
+    preferred = session.get("vision_figure")
+    # 提示时：若 AI 没给 figure，用原题看图结果；否则仍优先原题图结构（标注可更新）
+    if want_hint and not ai.get("figure") and preferred:
+        ai["figure"] = preferred
+    elif preferred and not ai.get("figure"):
+        ai["figure"] = preferred
+    ai = _attach_figure(
+        ai,
+        session.get("problem_text", ""),
+        preferred_figure=None if ai.get("figure") else preferred,
+        force_fallback=want_hint and not preferred,
+    )
     messages.append({"role": "assistant", "content": json.dumps(
         {k: v for k, v in ai.items() if k not in ("figure_svg", "figure_caption", "figure_data")},
         ensure_ascii=False,

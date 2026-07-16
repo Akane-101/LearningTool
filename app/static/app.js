@@ -5,16 +5,23 @@ let abortCtrl = null;
 let currentLang = "zh";
 let currentImageBase64 = null;
 let currentImageMime = null;
-let drawMode = "pen";
+let currentGeometryDescription = "";
+let currentVisionFigure = null;
+let drawMode = "move"; // move | pen | eraser
 let drawing = false;
-let labelsHidden = false;
-let bgMode = "figure"; // figure | photo
+let bgMode = "figure"; // figure | overlay | photo
 let latestFigureSvg = null;
+let latestFigureData = null;
+let geoBaseline = null; // 首次描摹的图形快照，用于「还原」
+let geoState = null;
+let geoDrag = null;
+const GEO_W = 360;
+const GEO_H = 280;
 
 const I18N = {
   zh: {
     title: "AI 带你一步一步解题",
-    subtitle: "拍照 / 粘贴图片 / 输入文字 → DeepSeek 在线逐步引导",
+    subtitle: "拍照看图 + 文字 → 百炼识几何图，DeepSeek 逐步引导",
     step1: "1. 输入题目",
     dropTitle: "把题目图片拖到这里，或按 Ctrl+V 粘贴截图",
     dropHint: "也支持手机拍照、相册选图",
@@ -48,10 +55,12 @@ const I18N = {
     gradingMsg: "AI 正在批改…",
     timeoutReply: "等待超时，请再试一次。",
     reqFailedRetry: "请求失败，请稍后重试。",
-    ocrProcessing: "正在识别图片中的文字…",
+    ocrProcessing: "正在识别文字并看懂图中的几何图形…",
     ocrFailed: "识别失败",
     ocrDone: "识别完成，请检查错字",
-    imageAttached: "图片已附上，AI 将看图解题",
+    imageAttached: "已附上原题图片",
+    visionOk: "已按原图描摹，可叠加拖动",
+    visionNeedKey: "看图需要百炼 Key（.env 里 DASHSCOPE_API_KEY）",
     netError: "网络异常，请确认服务已启动。",
     cameraUnsupported: "当前浏览器不支持摄像头，请用「拍照」或上传图片。",
     cameraFailed: "无法打开摄像头，请检查权限。",
@@ -62,18 +71,26 @@ const I18N = {
     defaultFeedback: "请按 AI 的引导写你的第一步。",
     noCamera: "当前浏览器不支持摄像头，请用「拍照」或上传图片。",
     workbenchTitle: "几何画板",
-    workbenchHint: "可在图上涂画标注 · 可切换底图",
+    workbenchHint: "拖动点/边/虚线 · 可叠原图或只看原图 · 拖动时可还原",
+    toolMove: "拖动",
     toolPen: "画笔",
     toolEraser: "橡皮",
     toolClear: "清空标注",
-    toolLabels: "隐藏/显示角度",
     toolBgFigure: "示意图",
-    toolBgPhoto: "原题照片",
+    toolBgPhoto: "叠加原图",
+    toolBgPhotoOnly: "只看原图",
+    toolResetGeo: "还原图形",
+    resetGeoDone: "已还原为刚描摹的图形",
+    noBaseline: "当前没有可还原的图形",
     noPhoto: "还没有原题照片，请先拍照或上传图片。",
+    clearImage: "清空图片",
+    clearText: "清空文字",
+    imageCleared: "已清空图片",
+    textCleared: "已清空题目文字",
   },
   en: {
     title: "AI Guides You Step by Step",
-    subtitle: "Photo / Paste image / Type → DeepSeek online tutoring",
+    subtitle: "Photo + text → Bailian reads the figure, DeepSeek guides",
     step1: "1. Enter the Problem",
     dropTitle: "Drag an image here, or press Ctrl+V to paste a screenshot",
     dropHint: "Also supports phone camera and photo gallery",
@@ -107,10 +124,12 @@ const I18N = {
     gradingMsg: "AI is grading…",
     timeoutReply: "Timed out. Please try again.",
     reqFailedRetry: "Request failed. Please try again later.",
-    ocrProcessing: "Recognizing text in the image…",
+    ocrProcessing: "Reading text and geometry from the image…",
     ocrFailed: "Recognition failed",
     ocrDone: "Recognition done. Please check for errors.",
-    imageAttached: "Image attached — AI will see the figure",
+    imageAttached: "Original photo attached",
+    visionOk: "Traced from photo — drag to adjust",
+    visionNeedKey: "Vision needs a Bailian key (DASHSCOPE_API_KEY in .env)",
     netError: "Network error. Make sure the server is running.",
     cameraUnsupported: "Camera not supported. Use \"Take Photo\" or upload.",
     cameraFailed: "Cannot open camera. Please check permissions.",
@@ -121,14 +140,22 @@ const I18N = {
     defaultFeedback: "Follow the AI's guidance and write your first step.",
     noCamera: "Camera not supported by this browser.",
     workbenchTitle: "Geometry Board",
-    workbenchHint: "Draw on the figure · switch background",
+    workbenchHint: "Drag points/edges · overlay or photo-only · reset while dragging",
+    toolMove: "Move",
     toolPen: "Pen",
     toolEraser: "Eraser",
     toolClear: "Clear marks",
-    toolLabels: "Toggle angle labels",
     toolBgFigure: "Diagram",
-    toolBgPhoto: "Photo",
+    toolBgPhoto: "Overlay photo",
+    toolBgPhotoOnly: "Photo only",
+    toolResetGeo: "Reset figure",
+    resetGeoDone: "Restored to the traced figure",
+    noBaseline: "Nothing to restore yet",
     noPhoto: "No problem photo yet. Please take or upload one first.",
+    clearImage: "Clear image",
+    clearText: "Clear text",
+    imageCleared: "Image cleared",
+    textCleared: "Problem text cleared",
   },
 };
 
@@ -238,6 +265,8 @@ document.addEventListener("paste", (e) => {
 btnOpenCamera.addEventListener("click", openCamera);
 btnCloseCamera.addEventListener("click", closeCamera);
 btnSnap.addEventListener("click", snapFromCamera);
+$("btnClearImage").addEventListener("click", clearCurrentImage);
+$("btnClearText").addEventListener("click", clearProblemText);
 btnStart.addEventListener("click", startAiGuide);
 btnSubmit.addEventListener("click", () => sendReply(false));
 btnHint.addEventListener("click", () => sendReply(true));
@@ -285,6 +314,45 @@ function showPreview(file) {
   preview.onload = () => URL.revokeObjectURL(url);
 }
 
+function clearCurrentImage() {
+  currentImageBase64 = null;
+  currentImageMime = null;
+  currentGeometryDescription = "";
+  currentVisionFigure = null;
+  preview.src = "";
+  preview.hidden = true;
+  ocrStatus.textContent = t("imageCleared");
+  ocrStatus.classList.remove("bad");
+  if ($("fileInput")) $("fileInput").value = "";
+  if ($("cameraInput")) $("cameraInput").value = "";
+  const photo = $("photoLayer");
+  if (photo) {
+    photo.removeAttribute("src");
+    photo.hidden = true;
+  }
+  if (bgMode === "overlay" || bgMode === "photo") bgMode = "figure";
+  syncPhotoToolsVisibility();
+  syncBgMode();
+}
+
+/** 无原图时隐藏「叠加原图 / 只看原图」 */
+function syncPhotoToolsVisibility() {
+  const hasPhoto = Boolean(currentImageBase64);
+  const btnOverlay = $("toolBgPhoto");
+  const btnPhoto = $("toolBgPhotoOnly");
+  if (btnOverlay) btnOverlay.hidden = !hasPhoto;
+  if (btnPhoto) btnPhoto.hidden = !hasPhoto;
+  if (!hasPhoto && (bgMode === "overlay" || bgMode === "photo")) {
+    bgMode = "figure";
+  }
+}
+
+function clearProblemText() {
+  problemText.value = "";
+  ocrStatus.textContent = t("textCleared");
+  ocrStatus.classList.remove("bad");
+}
+
 async function handleImageFile(file) {
   showPreview(file);
   ocrStatus.textContent = t("ocrProcessing");
@@ -305,15 +373,32 @@ async function handleImageFile(file) {
     currentImageBase64 = null;
     currentImageMime = null;
   }
+  syncPhotoToolsVisibility();
 
   const form = new FormData();
   form.append("file", file, file.name || "problem.png");
   try {
     const res = await fetch("/api/ocr", { method: "POST", body: form });
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      ocrStatus.textContent = t("ocrFailed") + `（HTTP ${res.status}）`;
+      ocrStatus.classList.add("bad");
+      return;
+    }
     if (!data.ok) { ocrStatus.textContent = data.message || t("ocrFailed"); ocrStatus.classList.add("bad"); return; }
     problemText.value = data.text || "";
-    ocrStatus.textContent = (data.message || t("ocrDone")) + (currentImageBase64 ? " · " + t("imageAttached") : "");
+    currentGeometryDescription = data.geometry_description || "";
+    currentVisionFigure = data.figure || null;
+    let status = data.message || t("ocrDone");
+    if (data.vision_ok && currentVisionFigure) {
+      status += " · " + t("visionOk");
+      showWorkbench(null, currentVisionFigure);
+    } else if (!data.vision_ok) {
+      ocrStatus.classList.add("bad");
+    }
+    ocrStatus.textContent = status;
   } catch { ocrStatus.textContent = t("netError"); ocrStatus.classList.add("bad"); }
 }
 
@@ -325,37 +410,526 @@ function addBubble(role, text) {
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-function addFigureBubble(svg, caption) {
-  if (!svg) return;
-  const wrap = document.createElement("div");
-  wrap.className = "bubble figure";
-  if (caption) {
-    const cap = document.createElement("p");
-    cap.className = "figure-caption";
-    cap.textContent = caption;
-    wrap.appendChild(cap);
+function addFigureBubble(svg, caption, figureData) {
+  if (svg) {
+    const wrap = document.createElement("div");
+    wrap.className = "bubble figure";
+    if (caption) {
+      const cap = document.createElement("p");
+      cap.className = "figure-caption";
+      cap.textContent = caption;
+      wrap.appendChild(cap);
+    }
+    const box = document.createElement("div");
+    box.className = "figure-svg";
+    box.innerHTML = svg;
+    wrap.appendChild(box);
+    chatLog.appendChild(wrap);
+    chatLog.scrollTop = chatLog.scrollHeight;
   }
-  const box = document.createElement("div");
-  box.className = "figure-svg";
-  box.innerHTML = svg;
-  wrap.appendChild(box);
-  chatLog.appendChild(wrap);
-  chatLog.scrollTop = chatLog.scrollHeight;
-  showWorkbench(svg);
+  showWorkbench(svg, figureData);
 }
 
-function showWorkbench(svg) {
-  latestFigureSvg = svg || latestFigureSvg;
+function cloneFigure(fig) {
+  return fig ? JSON.parse(JSON.stringify(fig)) : null;
+}
+
+function showWorkbench(svg, figureData) {
+  if (svg) latestFigureSvg = svg;
+  if (figureData) {
+    latestFigureData = figureData;
+    // 新图形到来时更新还原基准
+    geoBaseline = cloneFigure(figureData);
+  }
   const wb = $("workbench");
   if (!wb) return;
   wb.hidden = false;
-  if (latestFigureSvg) {
-    $("figureLayer").innerHTML = latestFigureSvg;
+
+  // 有原题照片时默认叠加：矢量描摹叠在原图上
+  if (currentImageBase64 && bgMode !== "photo") bgMode = "overlay";
+  syncPhotoToolsVisibility();
+
+  if (latestFigureData || latestFigureSvg) {
+    initGeoState(latestFigureData);
+    renderInteractiveGeo();
   }
+  setInteractionMode(drawMode);
   resizeCanvas();
   syncBgMode();
   if (currentImageBase64) {
-    $("photoLayer").src = `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
+    const photo = $("photoLayer");
+    photo.onload = () => {
+      if (latestFigureData && bgMode !== "photo") {
+        initGeoState(latestFigureData);
+        renderInteractiveGeo();
+      }
+    };
+    photo.src = `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
+  }
+}
+
+function resetGeoToBaseline() {
+  if (!geoBaseline) {
+    alert(t("noBaseline"));
+    return;
+  }
+  latestFigureData = cloneFigure(geoBaseline);
+  currentVisionFigure = latestFigureData;
+  initGeoState(latestFigureData);
+  if (bgMode === "photo") bgMode = "overlay";
+  syncBgMode();
+  renderInteractiveGeo();
+  const status = $("startStatus");
+  if (status) status.textContent = t("resetGeoDone");
+}
+
+/** 照片在画板中 object-fit:contain 后的内容区（SVG viewBox 坐标） */
+function getPhotoContentBox() {
+  const photo = $("photoLayer");
+  const nw = (photo && photo.naturalWidth) || 0;
+  const nh = (photo && photo.naturalHeight) || 0;
+  if (nw < 1 || nh < 1) {
+    return { ox: 0, oy: 0, w: GEO_W, h: GEO_H, ready: false };
+  }
+  const imgAspect = nw / nh;
+  const stageAspect = GEO_W / GEO_H;
+  let w, h, ox, oy;
+  if (imgAspect > stageAspect) {
+    w = GEO_W;
+    h = GEO_W / imgAspect;
+    ox = 0;
+    oy = (GEO_H - h) / 2;
+  } else {
+    h = GEO_H;
+    w = GEO_H * imgAspect;
+    ox = (GEO_W - w) / 2;
+    oy = 0;
+  }
+  return { ox, oy, w, h, ready: true };
+}
+
+function mapNormToSvg(nx, ny, box) {
+  return { x: box.ox + nx * box.w, y: box.oy + ny * box.h };
+}
+
+function mapSvgToNorm(x, y, box) {
+  if (!box.w || !box.h) return { x: 0.5, y: 0.5 };
+  return {
+    x: Math.min(1, Math.max(0, (x - box.ox) / box.w)),
+    y: Math.min(1, Math.max(0, (y - box.oy) / box.h)),
+  };
+}
+
+function initGeoState(figure) {
+  const f = figure || {};
+  const verts = (f.vertices && f.vertices.length >= 3) ? f.vertices.slice(0, 3) : ["A", "B", "C"];
+  const [a, b, c] = verts;
+  const src = f.points || {};
+  const normPts = {};
+  if (src[a] && src[b] && src[c]) {
+    for (const n of Object.keys(src)) {
+      if (src[n]) normPts[n] = { x: +src[n].x, y: +src[n].y };
+    }
+  } else {
+    normPts[a] = { x: 0.15, y: 0.78 };
+    normPts[b] = { x: 0.50, y: 0.18 };
+    normPts[c] = { x: 0.85, y: 0.78 };
+  }
+
+  geoState = {
+    verts,
+    normPts,
+    pts: {},
+    angle_labels: f.angle_labels || {},
+    highlight: f.highlight || null,
+    extra_points: (f.extra_points || []).map((ep) => ({ ...ep })),
+    segments: f.segments || [],
+    caption: f.caption || "",
+  };
+  remapGeoPoints();
+}
+
+/** 按当前模式把整图归一化坐标映射到 SVG；叠加时与原图对齐 */
+function remapGeoPoints() {
+  if (!geoState || !geoState.normPts) return;
+  const pts = {};
+  const overlay = bgMode === "overlay" && currentImageBase64;
+  if (overlay) {
+    const box = getPhotoContentBox();
+    geoState.view = { mode: "overlay", box };
+    for (const n of Object.keys(geoState.normPts)) {
+      const p = geoState.normPts[n];
+      pts[n] = mapNormToSvg(p.x, p.y, box);
+    }
+  } else {
+    // 纯示意图：把点集居中放大，方便拖动查看
+    const pad = 28;
+    const names = Object.keys(geoState.normPts);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of names) {
+      const p = geoState.normPts[n];
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    const spanX = Math.max(maxX - minX, 0.08);
+    const spanY = Math.max(maxY - minY, 0.08);
+    const usableW = GEO_W - 2 * pad;
+    const usableH = GEO_H - 2 * pad;
+    const scale = Math.min(usableW / spanX, usableH / spanY);
+    const ox = pad + (usableW - spanX * scale) / 2;
+    const oy = pad + (usableH - spanY * scale) / 2;
+    geoState.view = { mode: "fit", minX, minY, scale, ox, oy };
+    for (const n of names) {
+      const p = geoState.normPts[n];
+      pts[n] = { x: ox + (p.x - minX) * scale, y: oy + (p.y - minY) * scale };
+    }
+  }
+  geoState.pts = pts;
+  recomputeExtraPoints();
+}
+
+function syncNormFromPts() {
+  if (!geoState || !geoState.pts) return;
+  const view = geoState.view;
+  for (const n of Object.keys(geoState.pts)) {
+    const ep = findExtraPoint(n);
+    if (ep && ep.on) continue; // 边上点由 ratio 决定，不写死坐标
+    const p = geoState.pts[n];
+    if (view && view.mode === "overlay" && view.box) {
+      geoState.normPts[n] = mapSvgToNorm(p.x, p.y, view.box);
+    } else if (view && view.mode === "fit" && view.scale) {
+      geoState.normPts[n] = {
+        x: view.minX + (p.x - view.ox) / view.scale,
+        y: view.minY + (p.y - view.oy) / view.scale,
+      };
+    }
+  }
+  // 边上辅助点：用当前 ratio 反推像素后也可不写 norm；保留主点即可
+  if (latestFigureData) {
+    latestFigureData.points = { ...geoState.normPts };
+    currentVisionFigure = latestFigureData;
+  }
+}
+
+function recomputeExtraPoints() {
+  if (!geoState) return;
+  for (const ep of geoState.extra_points) {
+    const on = (ep.on || "").toUpperCase();
+    if (on.length < 2) continue;
+    const p1 = geoState.pts[on[0]];
+    const p2 = geoState.pts[on[1]];
+    if (!p1 || !p2) continue;
+    const t = typeof ep.ratio === "number" ? ep.ratio : 0.5;
+    geoState.pts[ep.name] = {
+      x: p1.x + (p2.x - p1.x) * t,
+      y: p1.y + (p2.y - p1.y) * t,
+    };
+  }
+}
+
+function findExtraPoint(name) {
+  if (!geoState) return null;
+  return geoState.extra_points.find((ep) => ep.name === name) || null;
+}
+
+function isMainVertex(name) {
+  return Boolean(geoState && geoState.verts.includes(name));
+}
+
+/** 把点投影到线段 p1-p2，返回 0~1 的 ratio */
+function projectRatio(pt, p1, p2) {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-6) return 0.5;
+  let t = ((pt.x - p1.x) * dx + (pt.y - p1.y) * dy) / len2;
+  return Math.max(0.08, Math.min(0.92, t));
+}
+
+function parseEdgeEnds(attr) {
+  if (!attr) return null;
+  if (attr.includes(",")) {
+    const parts = attr.split(",");
+    if (parts.length >= 2) return [parts[0], parts[1]];
+  }
+  // 兼容旧格式 "AB"
+  if (attr.length >= 2) return [attr[0], attr[1]];
+  return null;
+}
+
+function clampPt(p) {
+  return {
+    x: Math.max(16, Math.min(GEO_W - 16, p.x)),
+    y: Math.max(16, Math.min(GEO_H - 16, p.y)),
+  };
+}
+
+function anglePair(v, prev, next) {
+  let a1 = Math.atan2(prev.y - v.y, prev.x - v.x);
+  let a2 = Math.atan2(next.y - v.y, next.x - v.x);
+  let diff = (a2 - a1) % (Math.PI * 2);
+  if (diff < 0) diff += Math.PI * 2;
+  if (diff > Math.PI) {
+    const tmp = a1; a1 = a2; a2 = tmp;
+    diff = (a2 - a1) % (Math.PI * 2);
+    if (diff < 0) diff += Math.PI * 2;
+  }
+  return { a1, a2, diff };
+}
+
+function renderInteractiveGeo() {
+  if (!geoState) return;
+  const [a, b, c] = geoState.verts;
+  const pts = geoState.pts;
+  const overlay = bgMode === "overlay";
+  const lineColor = overlay ? "#1ee0a0" : "#1c2a24";
+  const dashColor = overlay ? "#5cffc0" : "#0f6b4c";
+  const arcColor = overlay ? "#ffb36b" : "#5a6b62";
+  const hiColor = overlay ? "#ff8a3d" : "#c45c26";
+  const layers = [];
+  layers.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${GEO_W} ${GEO_H}" width="100%" height="100%">`);
+  if (!overlay) {
+    layers.push('<rect width="100%" height="100%" fill="#fffdf8"/>');
+    layers.push(
+      `<polygon id="geoPoly" points="${pts[a].x},${pts[a].y} ${pts[b].x},${pts[b].y} ${pts[c].x},${pts[c].y}" ` +
+      `fill="#eef7f2" stroke="none" pointer-events="none"/>`
+    );
+  } else {
+    layers.push(
+      `<polygon id="geoPoly" points="${pts[a].x},${pts[a].y} ${pts[b].x},${pts[b].y} ${pts[c].x},${pts[c].y}" ` +
+      `fill="rgba(30,224,160,0.12)" stroke="none" pointer-events="none"/>`
+    );
+  }
+
+  // 可拖动的边（透明宽线）
+  const edges = [[a, b], [b, c], [c, a]];
+  for (const [u, v] of edges) {
+    layers.push(
+      `<line class="geo-edge" data-edge="${u},${v}" ` +
+      `x1="${pts[u].x}" y1="${pts[u].y}" x2="${pts[v].x}" y2="${pts[v].y}" />`
+    );
+    layers.push(
+      `<line data-edge-vis="${u}${v}" x1="${pts[u].x}" y1="${pts[u].y}" x2="${pts[v].x}" y2="${pts[v].y}" ` +
+      `stroke="${lineColor}" stroke-width="${overlay ? 3 : 2.5}" pointer-events="none"/>`
+    );
+  }
+
+  // 虚线可见层（不可点）
+  for (const s of geoState.segments || []) {
+    if (pts[s[0]] && pts[s[1]]) {
+      layers.push(
+        `<line data-seg-vis="1" x1="${pts[s[0]].x}" y1="${pts[s[0]].y}" x2="${pts[s[1]].x}" y2="${pts[s[1]].y}" ` +
+        `stroke="${dashColor}" stroke-width="${overlay ? 2.5 : 2}" stroke-dasharray="6 4" pointer-events="none"/>`
+      );
+    }
+  }
+
+  // 只保留角弧，不写角度数字 / 顶点字母 / 说明文字
+  const order = [a, b, c];
+  for (let i = 0; i < 3; i++) {
+    const name = order[i];
+    const prev = pts[order[(i + 2) % 3]];
+    const next = pts[order[(i + 1) % 3]];
+    const v = pts[name];
+    const { a1, a2 } = anglePair(v, prev, next);
+    const r = 28;
+    const x1 = v.x + r * Math.cos(a1);
+    const y1 = v.y + r * Math.sin(a1);
+    const x2 = v.x + r * Math.cos(a2);
+    const y2 = v.y + r * Math.sin(a2);
+    const color = geoState.highlight === name ? hiColor : arcColor;
+    const sw = geoState.highlight === name ? 2.5 : 1.5;
+    layers.push(
+      `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}" ` +
+      `fill="none" stroke="${color}" stroke-width="${sw}" pointer-events="none"/>`
+    );
+  }
+
+  // 虚线宽命中层放上面，保证能拖到
+  for (const s of geoState.segments || []) {
+    if (pts[s[0]] && pts[s[1]]) {
+      layers.push(
+        `<line class="geo-edge geo-seg" data-edge="${s[0]},${s[1]}" data-seg="1" ` +
+        `x1="${pts[s[0]].x}" y1="${pts[s[0]].y}" x2="${pts[s[1]].x}" y2="${pts[s[1]].y}" />`
+      );
+    }
+  }
+
+  // 主顶点可拖
+  for (const name of [a, b, c]) {
+    const p = pts[name];
+    if (!p) continue;
+    layers.push(
+      `<circle class="geo-vertex" data-vertex="${name}" cx="${p.x}" cy="${p.y}" r="9"/>`
+    );
+  }
+
+  // 虚线端点 / 辅助点可拖（在最上层）
+  const drawn = new Set([a, b, c]);
+  for (const ep of geoState.extra_points || []) {
+    const p = pts[ep.name];
+    if (!p || drawn.has(ep.name)) continue;
+    drawn.add(ep.name);
+    layers.push(
+      `<circle class="geo-vertex geo-extra" data-vertex="${ep.name}" data-extra="1" ` +
+      `cx="${p.x}" cy="${p.y}" r="9"/>`
+    );
+  }
+  // 写在 points/segments 里但不在 extra_points 的端点也给手柄
+  for (const s of geoState.segments || []) {
+    for (const name of s) {
+      const p = pts[name];
+      if (!p || drawn.has(name)) continue;
+      drawn.add(name);
+      layers.push(
+        `<circle class="geo-vertex geo-extra" data-vertex="${name}" ` +
+        `cx="${p.x}" cy="${p.y}" r="9"/>`
+      );
+    }
+  }
+
+  layers.push("</svg>");
+  $("figureLayer").innerHTML = layers.join("");
+  setupGeoDrag();
+}
+
+function svgPointFromEvent(e) {
+  const layer = $("figureLayer");
+  const svg = layer.querySelector("svg");
+  if (!svg) return null;
+  const rect = svg.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  const x = ((src.clientX - rect.left) / rect.width) * GEO_W;
+  const y = ((src.clientY - rect.top) / rect.height) * GEO_H;
+  return { x, y };
+}
+
+function setupGeoDrag() {
+  const layer = $("figureLayer");
+  if (layer.dataset.dragReady) return;
+  layer.dataset.dragReady = "1";
+
+  const onDown = (e) => {
+    if (drawMode !== "move") return;
+    const t = e.target;
+    if (!t) return;
+    const vertex = t.getAttribute && t.getAttribute("data-vertex");
+    const edgeAttr = t.getAttribute && t.getAttribute("data-edge");
+    const p = svgPointFromEvent(e);
+    if (!p || !geoState) return;
+    if (vertex) {
+      geoDrag = {
+        type: "vertex",
+        name: vertex,
+        isExtra: Boolean(t.getAttribute("data-extra")),
+        start: p,
+        orig: JSON.parse(JSON.stringify(geoState.pts)),
+        extraSnap: JSON.parse(JSON.stringify(geoState.extra_points)),
+      };
+    } else if (edgeAttr) {
+      const ends = parseEdgeEnds(edgeAttr);
+      if (!ends) return;
+      geoDrag = {
+        type: "edge",
+        ends,
+        start: p,
+        orig: JSON.parse(JSON.stringify(geoState.pts)),
+        extraSnap: JSON.parse(JSON.stringify(geoState.extra_points)),
+      };
+    } else {
+      return;
+    }
+    layer.classList.add("dragging");
+    e.preventDefault();
+  };
+
+  const onMove = (e) => {
+    if (!geoDrag || !geoState) return;
+    const p = svgPointFromEvent(e);
+    if (!p) return;
+    const dx = p.x - geoDrag.start.x;
+    const dy = p.y - geoDrag.start.y;
+    if (geoDrag.type === "vertex") {
+      const ep = findExtraPoint(geoDrag.name);
+      if (ep && geoDrag.isExtra) {
+        // 辅助点：沿所在边滑动，更新 ratio
+        const on = (ep.on || "").toUpperCase();
+        const p1 = geoState.pts[on[0]];
+        const p2 = geoState.pts[on[1]];
+        if (p1 && p2) {
+          ep.ratio = projectRatio(p, p1, p2);
+        }
+      } else {
+        geoState.pts[geoDrag.name] = clampPt({
+          x: geoDrag.orig[geoDrag.name].x + dx,
+          y: geoDrag.orig[geoDrag.name].y + dy,
+        });
+      }
+    } else if (geoDrag.type === "edge") {
+      const [u, v] = geoDrag.ends;
+      // 先平移所有「自由端点」（主顶点或未约束的辅助点）
+      for (const name of [u, v]) {
+        if (!geoDrag.orig[name]) continue;
+        const ep = findExtraPoint(name);
+        if (ep && ep.on) continue; // 边上约束点稍后按 ratio 更新
+        geoState.pts[name] = clampPt({
+          x: geoDrag.orig[name].x + dx,
+          y: geoDrag.orig[name].y + dy,
+        });
+      }
+      // 边上的辅助点：投影回所在边
+      for (const name of [u, v]) {
+        const ep = findExtraPoint(name);
+        if (!ep || !ep.on || !geoDrag.orig[name]) continue;
+        const on = String(ep.on || "").toUpperCase();
+        const p1 = geoState.pts[on[0]];
+        const p2 = geoState.pts[on[1]];
+        if (!p1 || !p2) continue;
+        const target = {
+          x: geoDrag.orig[name].x + dx,
+          y: geoDrag.orig[name].y + dy,
+        };
+        ep.ratio = projectRatio(target, p1, p2);
+      }
+    }
+    recomputeExtraPoints();
+    syncNormFromPts();
+    renderInteractiveGeo();
+    // keep drag state after re-render
+    layer.classList.add("dragging");
+    e.preventDefault();
+  };
+
+  const onUp = () => {
+    if (geoState) syncNormFromPts();
+    geoDrag = null;
+    $("figureLayer").classList.remove("dragging");
+  };
+
+  layer.addEventListener("mousedown", onDown);
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+  layer.addEventListener("touchstart", onDown, { passive: false });
+  window.addEventListener("touchmove", onMove, { passive: false });
+  window.addEventListener("touchend", onUp);
+}
+
+function setInteractionMode(mode) {
+  drawMode = mode;
+  const canvas = $("drawCanvas");
+  const moveBtn = $("toolMove");
+  const penBtn = $("toolPen");
+  const eraserBtn = $("toolEraser");
+  const resetBtn = $("toolResetGeo");
+  if (moveBtn) moveBtn.classList.toggle("active", mode === "move");
+  if (penBtn) penBtn.classList.toggle("active", mode === "pen");
+  if (eraserBtn) eraserBtn.classList.toggle("active", mode === "eraser");
+  if (resetBtn) resetBtn.hidden = mode !== "move";
+  if (canvas) {
+    // 只看原图时画布不拦截；拖动时穿透以便拖图形
+    const pass = mode === "move" || bgMode === "photo";
+    canvas.classList.toggle("passthrough", pass);
+    canvas.style.cursor = mode === "move" || bgMode === "photo" ? "default" : "crosshair";
   }
 }
 
@@ -370,20 +944,51 @@ function clearDrawings() {
 }
 
 function syncBgMode() {
+  syncPhotoToolsVisibility();
   const fig = $("figureLayer");
   const photo = $("photoLayer");
   const hasPhoto = Boolean(currentImageBase64);
+  const btnFig = $("toolBgFigure");
+  const btnOverlay = $("toolBgPhoto");
+  const btnPhoto = $("toolBgPhotoOnly");
+  if (btnFig) btnFig.classList.remove("active");
+  if (btnOverlay) btnOverlay.classList.remove("active");
+  if (btnPhoto) btnPhoto.classList.remove("active");
+
+  if ((bgMode === "overlay" || bgMode === "photo") && !hasPhoto) {
+    bgMode = "figure";
+  }
+
+  if (hasPhoto && (bgMode === "overlay" || bgMode === "photo")) {
+    photo.hidden = false;
+    if (currentImageBase64) {
+      const want = `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
+      if (photo.getAttribute("src") !== want) photo.src = want;
+    }
+  }
+
   if (bgMode === "photo" && hasPhoto) {
     fig.style.visibility = "hidden";
-    photo.hidden = false;
-    $("toolBgPhoto").classList.add("active");
-    $("toolBgFigure").classList.remove("active");
+    fig.classList.remove("overlay");
+    if (btnPhoto) btnPhoto.classList.add("active");
+  } else if (bgMode === "overlay" && hasPhoto) {
+    fig.style.visibility = "visible";
+    fig.classList.add("overlay");
+    if (btnOverlay) btnOverlay.classList.add("active");
   } else {
     bgMode = "figure";
     fig.style.visibility = "visible";
+    fig.classList.remove("overlay");
     photo.hidden = true;
-    $("toolBgFigure").classList.add("active");
-    $("toolBgPhoto").classList.remove("active");
+    if (btnFig) btnFig.classList.add("active");
+  }
+
+  // 同步画布穿透（只看原图时也不挡）
+  setInteractionMode(drawMode);
+
+  if (geoState && bgMode !== "photo") {
+    remapGeoPoints();
+    renderInteractiveGeo();
   }
 }
 
@@ -417,6 +1022,7 @@ function setupDrawing() {
   const ctx = () => canvas.getContext("2d");
 
   const start = (e) => {
+    if (drawMode === "move") return;
     drawing = true;
     const p = canvasPos(e);
     const c = ctx();
@@ -486,32 +1092,42 @@ async function startAiGuide() {
       payload.image_base64 = currentImageBase64;
       payload.image_mime = currentImageMime || "image/jpeg";
     }
+    if (currentGeometryDescription) {
+      payload.geometry_description = currentGeometryDescription;
+    }
+    if (currentVisionFigure) {
+      payload.figure_data = currentVisionFigure;
+    }
     const data = await fetchJson("/api/ai/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    });
+    }, 90000);
     if (!data.ok) { startStatus.textContent = data.message || t("startFailed"); startStatus.classList.add("bad"); return; }
     sessionId = data.session_id;
+    if (data.geometry_description) currentGeometryDescription = data.geometry_description;
+    if (data.figure_data) currentVisionFigure = data.figure_data;
     chatLog.innerHTML = "";
     donePanel.hidden = true;
     guidePanel.hidden = false;
     answerBox.value = "";
     $("workbench").hidden = true;
-    labelsHidden = false;
-    $("figureLayer").classList.remove("hide-labels");
     addBubble("ai", data.message || t("aiStart"));
     if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
-    if (data.figure_svg) {
-      addFigureBubble(data.figure_svg, data.figure_caption || "");
+    if (data.figure_svg || data.figure_data) {
+      addFigureBubble(data.figure_svg, data.figure_caption || "", data.figure_data || null);
+    } else if (currentVisionFigure) {
+      showWorkbench(null, currentVisionFigure);
     } else if (currentImageBase64) {
-      showWorkbench(null);
-      bgMode = "photo";
+      showWorkbench(null, null);
+      bgMode = "overlay";
       syncBgMode();
       $("workbench").hidden = false;
       resizeCanvas();
     }
-    startStatus.textContent = t("started");
+    startStatus.textContent = data.vision_note
+      ? t("started") + " · " + data.vision_note
+      : t("started");
     feedback.textContent = data.feedback || t("defaultFeedback");
     feedback.className = "feedback ok";
     if (data.completed) showDone(data.final_solution || data.message);
@@ -545,7 +1161,9 @@ async function sendReply(wantHint) {
     }
     if (data.message) addBubble("ai", data.message);
     if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
-    if (data.figure_svg) addFigureBubble(data.figure_svg, data.figure_caption || "");
+    if (data.figure_svg || data.figure_data) {
+      addFigureBubble(data.figure_svg, data.figure_caption || "", data.figure_data || null);
+    }
     if (!wantHint) answerBox.value = "";
     if (data.completed) showDone(data.final_solution || data.message);
   } catch (err) {
@@ -562,22 +1180,13 @@ function showDone(solution) {
 }
 
 // ===== Workbench tools =====
-$("toolPen").addEventListener("click", () => {
-  drawMode = "pen";
-  $("toolPen").classList.add("active");
-  $("toolEraser").classList.remove("active");
-});
-$("toolEraser").addEventListener("click", () => {
-  drawMode = "eraser";
-  $("toolEraser").classList.add("active");
-  $("toolPen").classList.remove("active");
-});
+$("toolMove").addEventListener("click", () => setInteractionMode("move"));
+$("toolPen").addEventListener("click", () => setInteractionMode("pen"));
+$("toolEraser").addEventListener("click", () => setInteractionMode("eraser"));
 $("toolClear").addEventListener("click", clearDrawings);
-$("toolToggleLabels").addEventListener("click", () => {
-  labelsHidden = !labelsHidden;
-  $("figureLayer").classList.toggle("hide-labels", labelsHidden);
-  $("toolToggleLabels").classList.toggle("active", labelsHidden);
-});
+if ($("toolResetGeo")) {
+  $("toolResetGeo").addEventListener("click", resetGeoToBaseline);
+}
 $("toolBgFigure").addEventListener("click", () => {
   bgMode = "figure";
   syncBgMode();
@@ -587,9 +1196,21 @@ $("toolBgPhoto").addEventListener("click", () => {
     alert(t("noPhoto"));
     return;
   }
-  bgMode = "photo";
+  bgMode = "overlay";
   syncBgMode();
 });
+if ($("toolBgPhotoOnly")) {
+  $("toolBgPhotoOnly").addEventListener("click", () => {
+    if (!currentImageBase64) {
+      alert(t("noPhoto"));
+      return;
+    }
+    bgMode = "photo";
+    syncBgMode();
+  });
+}
 
 setupDrawing();
 applyLang();
+syncPhotoToolsVisibility();
+setInteractionMode("move");

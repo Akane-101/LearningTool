@@ -111,6 +111,8 @@ class AiStartRequest(BaseModel):
     lang: str = Field("zh", description="语言：zh 或 en")
     image_base64: Optional[str] = Field(None, description="图片 base64（不含 data: 前缀）")
     image_mime: Optional[str] = Field(None, description="图片 MIME 类型，如 image/jpeg")
+    geometry_description: Optional[str] = Field(None, description="看图得到的图形描述")
+    figure_data: Optional[dict[str, Any]] = Field(None, description="看图得到的结构化图形")
 
 
 class AiReplyRequest(BaseModel):
