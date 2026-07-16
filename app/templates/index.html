@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI 解题引导 · Math Tutor</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="hero-row">
+        <div>
+          <h1 data-i18n="title">AI 带你一步一步解题</h1>
+          <p class="sub" data-i18n="subtitle">拍照 / 粘贴图片 / 输入文字 → DeepSeek 在线逐步引导</p>
+        </div>
+        <div class="lang-switch">
+          <button type="button" id="btnLangZh" class="lang-btn active" data-lang="zh">中文</button>
+          <button type="button" id="btnLangEn" class="lang-btn" data-lang="en">EN</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2 data-i18n="step1">1. 输入题目</h2>
+      <div id="dropZone" class="drop-zone" tabindex="0">
+        <p class="drop-title" data-i18n="dropTitle">把题目图片拖到这里，或按 Ctrl+V 粘贴截图</p>
+        <p class="drop-hint" data-i18n="dropHint">也支持手机拍照、相册选图</p>
+        <div class="actions center">
+          <label class="btn primary file-btn" data-i18n="upload">
+            上传图片
+            <input type="file" id="fileInput" accept="image/*" hidden />
+          </label>
+          <label class="btn ghost file-btn" data-i18n="takePhoto">
+            拍照
+            <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden />
+          </label>
+          <button type="button" id="btnOpenCamera" class="btn ghost" data-i18n="openCamera">打开摄像头</button>
+        </div>
+        <img id="preview" class="preview" alt="" hidden />
+        <p id="ocrStatus" class="meta"></p>
+      </div>
+
+      <div id="cameraPanel" class="camera-panel" hidden>
+        <video id="cameraVideo" autoplay playsinline></video>
+        <div class="actions">
+          <button type="button" id="btnSnap" class="btn primary" data-i18n="snap">拍照识别</button>
+          <button type="button" id="btnCloseCamera" class="btn ghost" data-i18n="closeCamera">关闭摄像头</button>
+        </div>
+      </div>
+
+      <h2 class="subhead" data-i18n="problemLabel">题目文字（可修改，也可包含你已有的做题过程）</h2>
+      <textarea id="problemText" rows="5"></textarea>
+      <div class="samples" id="samples"></div>
+      <div class="actions">
+        <button type="button" id="btnStart" class="btn primary" data-i18n="startGuide">开始 AI 引导</button>
+      </div>
+      <p id="startStatus" class="meta"></p>
+    </section>
+
+    <section class="panel" id="guidePanel" hidden>
+      <h2 data-i18n="step2">2. AI 逐步引导</h2>
+      <div id="chatLog" class="chat-log"></div>
+      <textarea id="answerBox" rows="3"></textarea>
+      <div class="actions">
+        <button type="button" id="btnHint" class="btn ghost" data-i18n="hint">卡住了，提示一下</button>
+        <button type="button" id="btnSubmit" class="btn primary" data-i18n="submit">提交回答</button>
+      </div>
+      <p class="feedback" id="feedback"></p>
+    </section>
+
+    <section class="panel" id="donePanel" hidden>
+      <h2 data-i18n="fullSolution">完整解答</h2>
+      <pre id="finalWriteup" class="writeup"></pre>
+      <button type="button" id="btnCopy" class="btn primary" data-i18n="copy">复制全文</button>
+    </section>
+
+    <footer class="foot" data-i18n="footer">
+      由 DeepSeek 提供解题引导 · 每次只推进一步，鼓励你自己思考
+    </footer>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
