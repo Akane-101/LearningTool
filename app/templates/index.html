@@ -52,9 +52,13 @@
 
       <div class="subhead-row">
         <h2 class="subhead" data-i18n="problemLabel">题目文字（可修改，也可包含你已有的做题过程）</h2>
-        <button type="button" id="btnClearText" class="btn ghost" data-i18n="clearText">清空文字</button>
+        <div class="subhead-actions">
+          <button type="button" id="btnVoiceProblem" class="btn ghost voice-btn" data-i18n="voiceInput">语音输入</button>
+          <button type="button" id="btnClearText" class="btn ghost" data-i18n="clearText">清空文字</button>
+        </div>
       </div>
       <textarea id="problemText" rows="5"></textarea>
+      <p id="voiceProblemStatus" class="meta voice-status"></p>
       <div class="samples" id="samples"></div>
       <div class="actions">
         <button type="button" id="btnStart" class="btn primary" data-i18n="startGuide">开始 AI 引导</button>
@@ -88,7 +92,12 @@
       </div>
 
       <div id="chatLog" class="chat-log"></div>
+      <div class="subhead-row answer-row">
+        <span class="meta" data-i18n="answerLabel">你的回答</span>
+        <button type="button" id="btnVoiceAnswer" class="btn ghost voice-btn" data-i18n="voiceInput">语音输入</button>
+      </div>
       <textarea id="answerBox" rows="3"></textarea>
+      <p id="voiceAnswerStatus" class="meta voice-status"></p>
       <div class="actions">
         <button type="button" id="btnHint" class="btn ghost" data-i18n="hint">卡住了，提示一下</button>
         <button type="button" id="btnSubmit" class="btn primary" data-i18n="submit">提交回答</button>

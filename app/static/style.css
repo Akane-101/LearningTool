@@ -284,6 +284,32 @@ textarea {
   margin: 0;
 }
 
+.subhead-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.answer-row {
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.voice-btn.listening {
+  background: #c45c26;
+  color: #fff;
+}
+
+.voice-status {
+  min-height: 1.2em;
+  margin: 0.25rem 0 0.4rem;
+}
+
+.voice-status.bad {
+  color: #b42318;
+}
+
 .camera-panel {
   margin: 0.75rem 0 1rem;
   padding: 0.75rem;
@@ -457,6 +483,11 @@ textarea {
 
 .draw-canvas.passthrough {
   pointer-events: none;
+}
+
+.figure-layer .geo-label {
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  user-select: none;
 }
 
 .figure-layer .geo-vertex {

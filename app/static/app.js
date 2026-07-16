@@ -87,6 +87,13 @@ const I18N = {
     clearText: "清空文字",
     imageCleared: "已清空图片",
     textCleared: "已清空题目文字",
+    voiceInput: "语音输入",
+    voiceStop: "停止录音",
+    voiceListening: "正在听…请说话",
+    voiceDone: "已写入文字，可继续改",
+    voiceUnsupported: "当前浏览器不支持语音输入，请用 Chrome / Edge，并允许麦克风权限。",
+    voiceError: "语音识别失败，请检查麦克风权限后重试。",
+    answerLabel: "你的回答",
   },
   en: {
     title: "AI Guides You Step by Step",
@@ -156,6 +163,13 @@ const I18N = {
     clearText: "Clear text",
     imageCleared: "Image cleared",
     textCleared: "Problem text cleared",
+    voiceInput: "Voice input",
+    voiceStop: "Stop",
+    voiceListening: "Listening… please speak",
+    voiceDone: "Text inserted. You can edit it.",
+    voiceUnsupported: "Speech recognition not supported. Use Chrome/Edge and allow the microphone.",
+    voiceError: "Speech recognition failed. Check mic permission and try again.",
+    answerLabel: "Your answer",
   },
 };
 
@@ -195,6 +209,7 @@ const chatLog = $("chatLog");
 const startStatus = $("startStatus");
 // ===== Language switcher =====
 function applyLang() {
+  stopVoiceInput();
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const key = el.getAttribute("data-i18n");
     const val = t(key);
@@ -267,6 +282,12 @@ btnCloseCamera.addEventListener("click", closeCamera);
 btnSnap.addEventListener("click", snapFromCamera);
 $("btnClearImage").addEventListener("click", clearCurrentImage);
 $("btnClearText").addEventListener("click", clearProblemText);
+if ($("btnVoiceProblem")) {
+  $("btnVoiceProblem").addEventListener("click", () => toggleVoiceInput("problem"));
+}
+if ($("btnVoiceAnswer")) {
+  $("btnVoiceAnswer").addEventListener("click", () => toggleVoiceInput("answer"));
+}
 btnStart.addEventListener("click", startAiGuide);
 btnSubmit.addEventListener("click", () => sendReply(false));
 btnHint.addEventListener("click", () => sendReply(true));
@@ -312,6 +333,107 @@ function showPreview(file) {
   const url = URL.createObjectURL(file);
   preview.src = url; preview.hidden = false;
   preview.onload = () => URL.revokeObjectURL(url);
+}
+
+// ===== 语音输入（Web Speech API，Chrome / Edge）=====
+let voiceRec = null;
+let voiceTarget = null; // "problem" | "answer"
+
+function getSpeechRecognition() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function voiceUi(target, listening) {
+  const btn = $(target === "answer" ? "btnVoiceAnswer" : "btnVoiceProblem");
+  const status = $(target === "answer" ? "voiceAnswerStatus" : "voiceProblemStatus");
+  if (btn) {
+    btn.classList.toggle("listening", listening);
+    btn.textContent = listening ? t("voiceStop") : t("voiceInput");
+  }
+  if (status) {
+    status.classList.remove("bad");
+    status.textContent = listening ? t("voiceListening") : "";
+  }
+}
+
+function stopVoiceInput() {
+  if (voiceRec) {
+    try { voiceRec.onresult = null; voiceRec.onerror = null; voiceRec.onend = null; voiceRec.stop(); } catch (_) {}
+    voiceRec = null;
+  }
+  if (voiceTarget) voiceUi(voiceTarget, false);
+  voiceTarget = null;
+}
+
+function toggleVoiceInput(target) {
+  const SR = getSpeechRecognition();
+  if (!SR) {
+    alert(t("voiceUnsupported"));
+    return;
+  }
+  // 再点一次：停止
+  if (voiceRec && voiceTarget === target) {
+    stopVoiceInput();
+    return;
+  }
+  stopVoiceInput();
+
+  const box = target === "answer" ? answerBox : problemText;
+  const status = $(target === "answer" ? "voiceAnswerStatus" : "voiceProblemStatus");
+  const rec = new SR();
+  rec.lang = currentLang === "en" ? "en-US" : "zh-CN";
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+
+  let finalized = "";
+  const base = (box.value || "").replace(/\s+$/, "");
+  const prefix = base ? base + (base.endsWith("\n") ? "" : " ") : "";
+
+  rec.onresult = (event) => {
+    let interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const piece = event.results[i][0].transcript || "";
+      if (event.results[i].isFinal) finalized += piece;
+      else interim += piece;
+    }
+    box.value = prefix + finalized + interim;
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  rec.onerror = (event) => {
+    if (status) {
+      status.textContent = event.error === "not-allowed"
+        ? t("voiceError")
+        : t("voiceError");
+      status.classList.add("bad");
+    }
+    stopVoiceInput();
+  };
+
+  rec.onend = () => {
+    // 连续模式有时会自动结束；若仍是当前会话则提示完成
+    if (voiceRec === rec) {
+      const s = $(voiceTarget === "answer" ? "voiceAnswerStatus" : "voiceProblemStatus");
+      if (s && !s.classList.contains("bad")) s.textContent = t("voiceDone");
+      voiceUi(voiceTarget, false);
+      voiceRec = null;
+      voiceTarget = null;
+    }
+  };
+
+  voiceRec = rec;
+  voiceTarget = target;
+  voiceUi(target, true);
+  try {
+    rec.start();
+  } catch (_) {
+    if (status) {
+      status.textContent = t("voiceError");
+      status.classList.add("bad");
+    }
+    stopVoiceInput();
+  }
 }
 
 function clearCurrentImage() {
@@ -724,14 +846,16 @@ function renderInteractiveGeo() {
     }
   }
 
-  // 只保留角弧，不写角度数字 / 顶点字母 / 说明文字
+  // 角弧 + 角度数字（若有）
   const order = [a, b, c];
+  const cx = (pts[a].x + pts[b].x + pts[c].x) / 3;
+  const cy = (pts[a].y + pts[b].y + pts[c].y) / 3;
   for (let i = 0; i < 3; i++) {
     const name = order[i];
     const prev = pts[order[(i + 2) % 3]];
     const next = pts[order[(i + 1) % 3]];
     const v = pts[name];
-    const { a1, a2 } = anglePair(v, prev, next);
+    const { a1, a2, diff } = anglePair(v, prev, next);
     const r = 28;
     const x1 = v.x + r * Math.cos(a1);
     const y1 = v.y + r * Math.sin(a1);
@@ -742,6 +866,36 @@ function renderInteractiveGeo() {
     layers.push(
       `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}" ` +
       `fill="none" stroke="${color}" stroke-width="${sw}" pointer-events="none"/>`
+    );
+    const deg = (geoState.angle_labels || {})[name];
+    if (deg) {
+      const mid = a1 + diff / 2;
+      const lx = v.x + (r + 14) * Math.cos(mid);
+      const ly = v.y + (r + 14) * Math.sin(mid);
+      layers.push(
+        `<text class="geo-label" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" ` +
+        `dominant-baseline="middle" font-size="13" font-weight="700" fill="${color}" ` +
+        `pointer-events="none">${deg}</text>`
+      );
+    }
+  }
+
+  // 顶点字母 A/B/C 及辅助点字母（放在外侧）
+  const labelColor = overlay ? "#ffffff" : "#1c2a24";
+  const labelStroke = overlay ? "rgba(0,0,0,0.55)" : "none";
+  for (const name of Object.keys(pts)) {
+    const p = pts[name];
+    if (!p) continue;
+    let dx = p.x - cx;
+    let dy = p.y - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    const ox = (dx / len) * 18;
+    const oy = (dy / len) * 18;
+    layers.push(
+      `<text class="geo-label geo-vertex-label" x="${(p.x + ox).toFixed(1)}" y="${(p.y + oy).toFixed(1)}" ` +
+      `text-anchor="middle" dominant-baseline="middle" font-size="16" font-weight="700" ` +
+      `fill="${labelColor}" stroke="${labelStroke}" stroke-width="3" paint-order="stroke" ` +
+      `pointer-events="none">${name}</text>`
     );
   }
 
