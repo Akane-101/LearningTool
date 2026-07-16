@@ -302,6 +302,24 @@ function addBubble(role, text) {
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
+function addFigureBubble(svg, caption) {
+  if (!svg) return;
+  const wrap = document.createElement("div");
+  wrap.className = "bubble figure";
+  if (caption) {
+    const cap = document.createElement("p");
+    cap.className = "figure-caption";
+    cap.textContent = caption;
+    wrap.appendChild(cap);
+  }
+  const box = document.createElement("div");
+  box.className = "figure-svg";
+  box.innerHTML = svg;
+  wrap.appendChild(box);
+  chatLog.appendChild(wrap);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
 function setBusy(on, label) {
   busy = on;
   btnSubmit.disabled = on;
@@ -347,6 +365,7 @@ async function startAiGuide() {
     answerBox.value = "";
     addBubble("ai", data.message || t("aiStart"));
     if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
+    if (data.figure_svg) addFigureBubble(data.figure_svg, data.figure_caption || "");
     startStatus.textContent = t("started");
     feedback.textContent = data.feedback || t("defaultFeedback");
     feedback.className = "feedback ok";
@@ -381,6 +400,7 @@ async function sendReply(wantHint) {
     }
     if (data.message) addBubble("ai", data.message);
     if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
+    if (data.figure_svg) addFigureBubble(data.figure_svg, data.figure_caption || "");
     if (!wantHint) answerBox.value = "";
     if (data.completed) showDone(data.final_solution || data.message);
   } catch (err) {

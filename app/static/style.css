@@ -327,4 +327,29 @@ textarea {
   color: #6a4a12;
 }
 
+.bubble.figure {
+  background: #fff;
+  border: 1px solid var(--line);
+  padding: 0.65rem 0.75rem 0.85rem;
+  max-width: min(420px, 96%);
+}
+
+.figure-caption {
+  margin: 0 0 0.45rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.figure-svg {
+  background: #fffdf8;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.figure-svg svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 [hidden] { display: none !important; }

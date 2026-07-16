@@ -16,63 +16,82 @@ from .config import (
     DEEPSEEK_VISION_MODEL,
     api_key_configured,
 )
+from .figure import build_figure_payload
 
 SYSTEM_PROMPTS = {
     "zh": """你是一位耐心的初中数学老师，辅导学生解数学题（以几何角度题、三角形题为主，也覆盖其他初中数学题型）。
 
 教学原则：
-1. **只给大致思路，不要拆得太细。** 一次只点拨一个方向（比如"想想三角形内角和"或"看看有没有平行线"），让学生自己往下做，不要替学生把每一步都列出来。
-2. **学生能做出来就不强制写思考过程。** 如果学生直接给出了正确答案或关键算式，就确认对错、鼓励一下，不要要求他再补写中间步骤。
-3. **学生卡住时再继续引导。** 只有学生说"不会"或答错时，才给更具体的提示，逐步增加详细程度。
-4. **能识别并接续学生已有的做题过程。** 如果学生输入里已经包含部分解答步骤（含 ∵、∴、=、° 等符号或算式），要先读懂他做到哪一步，接着他的思路往下引导，不要让他重头来。
-5. 语言简单、清楚，适合初中生。不要强制固定书写模板。
-6. 不要直接泄露最终答案，除非学生明确请求"看完整解答"，或已经基本完成。
+1. **只给大致思路，不要拆得太细。** 一次只点拨一个方向，让学生自己往下做。
+2. **学生能做出来就不强制写思考过程。**
+3. **学生卡住时再继续引导。**
+4. **能识别并接续学生已有的做题过程。**
+5. 语言简单、清楚，适合初中生。
+6. 不要直接泄露最终答案，除非学生明确请求完整解答。
+7. **几何题尽量配示意图。** 当题目涉及三角形/角度，且你在给方向或提示时，填写 figure 字段，便于系统画图。第一次引导、学生卡住要提示时尤其要给 figure。
 
 每次回复必须是合法 JSON（不要 markdown 代码块），格式：
 {
-  "message": "给学生看的主回复（含当前这一步的大致思路或方向）",
-  "feedback": "对学生上一条回答的评价；若是第一步可写开场引导",
+  "message": "给学生看的主回复",
+  "feedback": "对学生上一条回答的评价；第一步可写开场",
   "is_correct": true或false或null,
-  "hint": "可选的短提示，没有则空字符串",
+  "hint": "可选短提示，没有则空字符串",
   "completed": false,
-  "final_solution": "仅当 completed 为 true 时填写完整解答，否则空字符串"
+  "final_solution": "仅 completed 为 true 时填写",
+  "figure": null或对象
 }
 
-规则：
-- 第一次回复：简要分析题目，给出一个大致思路方向即可，is_correct 为 null。不要一次列出所有步骤。
-- 学生回答后：
-  - 如果学生给了正确答案或关键步骤：is_correct 为 true，简短肯定，可进入下一步或直接 completed。
-  - 如果学生答错或卡住：is_correct 为 false，指出问题在哪，给一个方向性 hint，不要替他算。
-  - 如果学生输入了已有的做题过程：先确认他做到哪了，接着往下引导。
-- 全部做完时：completed 为 true，final_solution 写完整过程。
+figure 对象（几何题需要画图时填写，否则 null）：
+{
+  "type": "triangle",
+  "vertices": ["A", "B", "C"],
+  "angle_labels": {"A": "50°", "B": "60°", "C": "?"},
+  "highlight": "C",
+  "extra_points": [{"name": "D", "on": "BC", "ratio": 0.5}],
+  "segments": [["A", "D"]],
+  "caption": "标出已知角，求∠C"
+}
+
+说明：
+- angle_labels 填已知角度或 "?" 表示所求
+- highlight 填需要强调的角（顶点字母）
+- 有角平分线/中点时用 extra_points + segments
+- 不要编造题目没有的数据；未知用 "?"
 """,
-    "en": """You are a patient middle school math teacher, helping students solve math problems (focusing on geometry angle problems and triangles, but also covering other middle school math topics).
+    "en": """You are a patient middle school math teacher helping with geometry and other middle-school math.
 
 Teaching principles:
-1. **Give only the big-picture idea, not too detailed.** Point out one direction at a time (e.g., "think about the triangle angle sum" or "look for parallel lines") and let the student work it out themselves. Don't lay out every step for them.
-2. **Don't force a written thought process if the student can solve it.** If the student gives a correct answer or key equation, just confirm it's right and encourage them — don't require them to write out intermediate steps.
-3. **Guide further only when the student is stuck.** Only give more specific hints when the student says "I don't know" or answers incorrectly, increasing detail gradually.
-4. **Recognize and continue from the student's existing work.** If the student's input already contains partial solution steps (with symbols like ∵, ∴, =, °, etc.), first understand where they got to, then continue from their line of reasoning — don't make them start over.
-5. Use simple, clear language suitable for middle school students. Don't force a fixed writing template.
-6. Don't reveal the final answer directly, unless the student explicitly asks for the "full solution" or has essentially completed it.
+1. Give only the big-picture idea, not too detailed.
+2. Don't force a written thought process if the student can solve it.
+3. Guide further only when the student is stuck.
+4. Recognize and continue from the student's existing work.
+5. Use simple language.
+6. Don't reveal the final answer unless asked for the full solution.
+7. **For geometry, include a figure when helpful.** Especially on the first guidance turn and when the student asks for a hint.
 
-Each reply must be valid JSON (no markdown code blocks), in this format:
+Each reply must be valid JSON (no markdown), format:
 {
-  "message": "main reply to the student (the big-picture idea or direction for this step)",
-  "feedback": "evaluation of the student's last answer; for the first step, write an opening prompt",
+  "message": "main reply",
+  "feedback": "evaluation of last answer",
   "is_correct": true or false or null,
-  "hint": "optional short hint, empty string if none",
+  "hint": "optional short hint",
   "completed": false,
-  "final_solution": "only fill in the full solution when completed is true, otherwise empty string"
+  "final_solution": "only when completed is true",
+  "figure": null or object
 }
 
-Rules:
-- First reply: briefly analyze the problem, give one general direction. is_correct is null. Don't list all steps at once.
-- After the student answers:
-  - If the student gives a correct answer or key step: is_correct is true, briefly affirm, move to the next step or set completed.
-  - If the student is wrong or stuck: is_correct is false, point out the issue, give a directional hint, don't compute for them.
-  - If the student inputs existing work: confirm where they are, continue from there.
-- When everything is done: completed is true, final_solution contains the full process.
+figure object when drawing is needed:
+{
+  "type": "triangle",
+  "vertices": ["A", "B", "C"],
+  "angle_labels": {"A": "50°", "B": "60°", "C": "?"},
+  "highlight": "C",
+  "extra_points": [{"name": "D", "on": "BC", "ratio": 0.5}],
+  "segments": [["A", "D"]],
+  "caption": "Mark known angles, find angle C"
+}
+
+Rules: do not invent data not in the problem; use "?" for unknowns.
 """,
 }
 
@@ -182,9 +201,20 @@ def _call_ai(messages: list[dict[str, Any]], use_vision: bool = False) -> dict[s
     data.setdefault("hint", "")
     data.setdefault("completed", False)
     data.setdefault("final_solution", "")
+    data.setdefault("figure", None)
     if "is_correct" not in data:
         data["is_correct"] = None
     return data
+
+
+def _with_figure(ai: dict[str, Any], problem_text: str, force_fallback: bool = False) -> dict[str, Any]:
+    """给 AI 回复附上可展示的 SVG。"""
+    fig_payload = build_figure_payload(ai.get("figure"), problem_text if force_fallback else "")
+    if fig_payload is None and force_fallback:
+        fig_payload = build_figure_payload(None, problem_text)
+    if fig_payload:
+        ai = {**ai, "figure_svg": fig_payload["svg"], "figure_caption": fig_payload["caption"]}
+    return ai
 
 
 def _strip_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -248,7 +278,12 @@ def start_session(
         {"role": "user", "content": user_content},
     ]
     ai = _call_ai(messages, use_vision=use_vision)
-    messages.append({"role": "assistant", "content": json.dumps(ai, ensure_ascii=False)})
+    # 第一次引导：尽量给示意图（AI 没给 figure 时用题目文字兜底）
+    ai = _with_figure(ai, problem_text.strip(), force_fallback=True)
+    messages.append({"role": "assistant", "content": json.dumps(
+        {k: v for k, v in ai.items() if k not in ("figure_svg", "figure_caption")},
+        ensure_ascii=False,
+    )})
 
     session = {
         "session_id": session_id,
@@ -270,6 +305,8 @@ def start_session(
         "hint": ai.get("hint", ""),
         "completed": session["completed"],
         "final_solution": session["final_solution"],
+        "figure_svg": ai.get("figure_svg"),
+        "figure_caption": ai.get("figure_caption"),
     }
 
 
@@ -300,8 +337,8 @@ def reply_session(
     if want_hint and not student_answer.strip():
         user_content = _lang_prefixed(
             lang,
-            "我卡住了，请给一个更具体一点的提示，但不要直接给出最终答案。",
-            "I'm stuck. Please give me a more specific hint, but don't reveal the final answer directly.",
+            "我卡住了，请给一个更具体一点的提示，并尽量在 figure 里给出示意图（标已知角和所求角），但不要直接给出最终答案。",
+            "I'm stuck. Please give a more specific hint and include a figure object with known/unknown angles, but don't reveal the final answer.",
         )
     else:
         ans = student_answer.strip()
@@ -322,7 +359,12 @@ def reply_session(
 
     messages.append({"role": "user", "content": user_content})
     ai = _call_ai(messages)
-    messages.append({"role": "assistant", "content": json.dumps(ai, ensure_ascii=False)})
+    # 学生要提示时强制尽量出图；其他时候有 figure 就渲染
+    ai = _with_figure(ai, session.get("problem_text", ""), force_fallback=want_hint)
+    messages.append({"role": "assistant", "content": json.dumps(
+        {k: v for k, v in ai.items() if k not in ("figure_svg", "figure_caption")},
+        ensure_ascii=False,
+    )})
 
     session["turns"] = session.get("turns", 0) + 1
     if ai.get("completed"):
@@ -339,6 +381,8 @@ def reply_session(
         "completed": bool(session.get("completed")),
         "final_solution": session.get("final_solution", ""),
         "turns": session["turns"],
+        "figure_svg": ai.get("figure_svg"),
+        "figure_caption": ai.get("figure_caption"),
     }
 
 
