@@ -60,6 +60,27 @@
 
     <section class="panel" id="guidePanel" hidden>
       <h2 data-i18n="step2">2. AI 逐步引导</h2>
+
+      <div id="workbench" class="workbench" hidden>
+        <div class="workbench-head">
+          <h3 data-i18n="workbenchTitle">几何画板</h3>
+          <p class="meta" data-i18n="workbenchHint">可在图上涂画标注 · 可切换底图</p>
+        </div>
+        <div class="workbench-toolbar">
+          <button type="button" id="toolPen" class="tool-btn active" data-i18n="toolPen">画笔</button>
+          <button type="button" id="toolEraser" class="tool-btn" data-i18n="toolEraser">橡皮</button>
+          <button type="button" id="toolClear" class="tool-btn" data-i18n="toolClear">清空标注</button>
+          <button type="button" id="toolToggleLabels" class="tool-btn" data-i18n="toolLabels">隐藏/显示角度</button>
+          <button type="button" id="toolBgFigure" class="tool-btn active" data-i18n="toolBgFigure">示意图</button>
+          <button type="button" id="toolBgPhoto" class="tool-btn" data-i18n="toolBgPhoto">原题照片</button>
+        </div>
+        <div class="workbench-stage" id="workbenchStage">
+          <div id="figureLayer" class="figure-layer"></div>
+          <img id="photoLayer" class="photo-layer" alt="" hidden />
+          <canvas id="drawCanvas" class="draw-canvas"></canvas>
+        </div>
+      </div>
+
       <div id="chatLog" class="chat-log"></div>
       <textarea id="answerBox" rows="3"></textarea>
       <div class="actions">

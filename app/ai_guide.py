@@ -213,7 +213,12 @@ def _with_figure(ai: dict[str, Any], problem_text: str, force_fallback: bool = F
     if fig_payload is None and force_fallback:
         fig_payload = build_figure_payload(None, problem_text)
     if fig_payload:
-        ai = {**ai, "figure_svg": fig_payload["svg"], "figure_caption": fig_payload["caption"]}
+        ai = {
+            **ai,
+            "figure_svg": fig_payload["svg"],
+            "figure_caption": fig_payload["caption"],
+            "figure_data": fig_payload.get("figure"),
+        }
     return ai
 
 
@@ -281,7 +286,7 @@ def start_session(
     # 第一次引导：尽量给示意图（AI 没给 figure 时用题目文字兜底）
     ai = _with_figure(ai, problem_text.strip(), force_fallback=True)
     messages.append({"role": "assistant", "content": json.dumps(
-        {k: v for k, v in ai.items() if k not in ("figure_svg", "figure_caption")},
+        {k: v for k, v in ai.items() if k not in ("figure_svg", "figure_caption", "figure_data")},
         ensure_ascii=False,
     )})
 
@@ -307,6 +312,7 @@ def start_session(
         "final_solution": session["final_solution"],
         "figure_svg": ai.get("figure_svg"),
         "figure_caption": ai.get("figure_caption"),
+        "figure_data": ai.get("figure_data"),
     }
 
 
@@ -362,7 +368,7 @@ def reply_session(
     # 学生要提示时强制尽量出图；其他时候有 figure 就渲染
     ai = _with_figure(ai, session.get("problem_text", ""), force_fallback=want_hint)
     messages.append({"role": "assistant", "content": json.dumps(
-        {k: v for k, v in ai.items() if k not in ("figure_svg", "figure_caption")},
+        {k: v for k, v in ai.items() if k not in ("figure_svg", "figure_caption", "figure_data")},
         ensure_ascii=False,
     )})
 
@@ -383,6 +389,7 @@ def reply_session(
         "turns": session["turns"],
         "figure_svg": ai.get("figure_svg"),
         "figure_caption": ai.get("figure_caption"),
+        "figure_data": ai.get("figure_data"),
     }
 
 

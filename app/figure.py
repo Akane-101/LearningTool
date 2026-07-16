@@ -229,8 +229,8 @@ def _escape(s: str) -> str:
     )
 
 
-def build_figure_payload(ai_figure: Any, problem_text: str = "") -> Optional[dict[str, str]]:
-    """返回供前端展示的 {svg, caption}；失败则 None。"""
+def build_figure_payload(ai_figure: Any, problem_text: str = "") -> Optional[dict[str, Any]]:
+    """返回供前端展示的 {svg, caption, figure}；失败则 None。"""
     fig = normalize_figure(ai_figure)
     if fig is None and problem_text:
         fig = figure_from_problem_text(problem_text)
@@ -240,4 +240,8 @@ def build_figure_payload(ai_figure: Any, problem_text: str = "") -> Optional[dic
         svg = render_triangle_svg(fig)
     except Exception:
         return None
-    return {"svg": svg, "caption": fig.get("caption") or ""}
+    return {
+        "svg": svg,
+        "caption": fig.get("caption") or "",
+        "figure": fig,
+    }

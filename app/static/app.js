@@ -5,6 +5,11 @@ let abortCtrl = null;
 let currentLang = "zh";
 let currentImageBase64 = null;
 let currentImageMime = null;
+let drawMode = "pen";
+let drawing = false;
+let labelsHidden = false;
+let bgMode = "figure"; // figure | photo
+let latestFigureSvg = null;
 
 const I18N = {
   zh: {
@@ -56,6 +61,15 @@ const I18N = {
     aiStart: "开始吧！",
     defaultFeedback: "请按 AI 的引导写你的第一步。",
     noCamera: "当前浏览器不支持摄像头，请用「拍照」或上传图片。",
+    workbenchTitle: "几何画板",
+    workbenchHint: "可在图上涂画标注 · 可切换底图",
+    toolPen: "画笔",
+    toolEraser: "橡皮",
+    toolClear: "清空标注",
+    toolLabels: "隐藏/显示角度",
+    toolBgFigure: "示意图",
+    toolBgPhoto: "原题照片",
+    noPhoto: "还没有原题照片，请先拍照或上传图片。",
   },
   en: {
     title: "AI Guides You Step by Step",
@@ -106,6 +120,15 @@ const I18N = {
     aiStart: "Let's start!",
     defaultFeedback: "Follow the AI's guidance and write your first step.",
     noCamera: "Camera not supported by this browser.",
+    workbenchTitle: "Geometry Board",
+    workbenchHint: "Draw on the figure · switch background",
+    toolPen: "Pen",
+    toolEraser: "Eraser",
+    toolClear: "Clear marks",
+    toolLabels: "Toggle angle labels",
+    toolBgFigure: "Diagram",
+    toolBgPhoto: "Photo",
+    noPhoto: "No problem photo yet. Please take or upload one first.",
   },
 };
 
@@ -318,14 +341,125 @@ function addFigureBubble(svg, caption) {
   wrap.appendChild(box);
   chatLog.appendChild(wrap);
   chatLog.scrollTop = chatLog.scrollHeight;
+  showWorkbench(svg);
+}
+
+function showWorkbench(svg) {
+  latestFigureSvg = svg || latestFigureSvg;
+  const wb = $("workbench");
+  if (!wb) return;
+  wb.hidden = false;
+  if (latestFigureSvg) {
+    $("figureLayer").innerHTML = latestFigureSvg;
+  }
+  resizeCanvas();
+  syncBgMode();
+  if (currentImageBase64) {
+    $("photoLayer").src = `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
+  }
+}
+
+function clearDrawings() {
+  const canvas = $("drawCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
+function syncBgMode() {
+  const fig = $("figureLayer");
+  const photo = $("photoLayer");
+  const hasPhoto = Boolean(currentImageBase64);
+  if (bgMode === "photo" && hasPhoto) {
+    fig.style.visibility = "hidden";
+    photo.hidden = false;
+    $("toolBgPhoto").classList.add("active");
+    $("toolBgFigure").classList.remove("active");
+  } else {
+    bgMode = "figure";
+    fig.style.visibility = "visible";
+    photo.hidden = true;
+    $("toolBgFigure").classList.add("active");
+    $("toolBgPhoto").classList.remove("active");
+  }
+}
+
+function resizeCanvas() {
+  const stage = $("workbenchStage");
+  const canvas = $("drawCanvas");
+  if (!stage || !canvas) return;
+  const rect = stage.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+  canvas.style.width = rect.width + "px";
+  canvas.style.height = rect.height + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+}
+
+function canvasPos(e) {
+  const canvas = $("drawCanvas");
+  const rect = canvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+}
+
+function setupDrawing() {
+  const canvas = $("drawCanvas");
+  if (!canvas || canvas.dataset.ready) return;
+  canvas.dataset.ready = "1";
+  const ctx = () => canvas.getContext("2d");
+
+  const start = (e) => {
+    drawing = true;
+    const p = canvasPos(e);
+    const c = ctx();
+    c.beginPath();
+    c.moveTo(p.x, p.y);
+    e.preventDefault();
+  };
+  const move = (e) => {
+    if (!drawing) return;
+    const p = canvasPos(e);
+    const c = ctx();
+    if (drawMode === "eraser") {
+      c.globalCompositeOperation = "destination-out";
+      c.strokeStyle = "rgba(0,0,0,1)";
+      c.lineWidth = 18;
+    } else {
+      c.globalCompositeOperation = "source-over";
+      c.strokeStyle = "#c45c26";
+      c.lineWidth = 3;
+    }
+    c.lineTo(p.x, p.y);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(p.x, p.y);
+    e.preventDefault();
+  };
+  const end = () => { drawing = false; };
+
+  canvas.addEventListener("mousedown", start);
+  canvas.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  canvas.addEventListener("touchstart", start, { passive: false });
+  canvas.addEventListener("touchmove", move, { passive: false });
+  canvas.addEventListener("touchend", end);
+  window.addEventListener("resize", resizeCanvas);
 }
 
 function setBusy(on, label) {
   busy = on;
-  btnSubmit.disabled = on;
-  btnHint.disabled = on;
-  btnStart.disabled = on;
-  btnStart.textContent = on ? (label || t("thinking")) : t("startGuide");
+  $("btnSubmit").disabled = on;
+  $("btnHint").disabled = on;
+  $("btnStart").disabled = on;
+  $("btnStart").textContent = on ? (label || t("thinking")) : t("startGuide");
 }
 
 async function fetchJson(url, options, timeoutMs) {
@@ -363,9 +497,20 @@ async function startAiGuide() {
     donePanel.hidden = true;
     guidePanel.hidden = false;
     answerBox.value = "";
+    $("workbench").hidden = true;
+    labelsHidden = false;
+    $("figureLayer").classList.remove("hide-labels");
     addBubble("ai", data.message || t("aiStart"));
     if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
-    if (data.figure_svg) addFigureBubble(data.figure_svg, data.figure_caption || "");
+    if (data.figure_svg) {
+      addFigureBubble(data.figure_svg, data.figure_caption || "");
+    } else if (currentImageBase64) {
+      showWorkbench(null);
+      bgMode = "photo";
+      syncBgMode();
+      $("workbench").hidden = false;
+      resizeCanvas();
+    }
     startStatus.textContent = t("started");
     feedback.textContent = data.feedback || t("defaultFeedback");
     feedback.className = "feedback ok";
@@ -416,4 +561,35 @@ function showDone(solution) {
   finalWriteup.textContent = solution || "";
 }
 
+// ===== Workbench tools =====
+$("toolPen").addEventListener("click", () => {
+  drawMode = "pen";
+  $("toolPen").classList.add("active");
+  $("toolEraser").classList.remove("active");
+});
+$("toolEraser").addEventListener("click", () => {
+  drawMode = "eraser";
+  $("toolEraser").classList.add("active");
+  $("toolPen").classList.remove("active");
+});
+$("toolClear").addEventListener("click", clearDrawings);
+$("toolToggleLabels").addEventListener("click", () => {
+  labelsHidden = !labelsHidden;
+  $("figureLayer").classList.toggle("hide-labels", labelsHidden);
+  $("toolToggleLabels").classList.toggle("active", labelsHidden);
+});
+$("toolBgFigure").addEventListener("click", () => {
+  bgMode = "figure";
+  syncBgMode();
+});
+$("toolBgPhoto").addEventListener("click", () => {
+  if (!currentImageBase64) {
+    alert(t("noPhoto"));
+    return;
+  }
+  bgMode = "photo";
+  syncBgMode();
+});
+
+setupDrawing();
 applyLang();
