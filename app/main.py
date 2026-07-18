@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, File, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -15,6 +15,7 @@ from .config import (
     DASHSCOPE_VL_MODEL,
 )
 from .vision import analyze_geometry_image
+from .asr import asr_configured, transcribe_audio
 from .ai_guide import get_session, reply_session, start_session as ai_start_session
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -47,7 +48,22 @@ async def health():
         "vision_configured": vision_configured(),
         "vision_provider": vision_provider(),
         "vision_model": DASHSCOPE_VL_MODEL,
+        "asr_configured": asr_configured(),
     }
+
+
+@app.post("/api/asr")
+async def asr_upload(
+    file: UploadFile = File(...),
+    lang: str = Query("zh"),
+):
+    """上传录音，转成文字（百炼 Qwen3-ASR）。"""
+    data = await file.read()
+    mime = file.content_type or "audio/webm"
+    try:
+        return transcribe_audio(data, mime=mime, language=lang)
+    except Exception as exc:
+        return {"ok": False, "text": "", "message": f"语音识别失败：{exc}"}
 
 
 @app.get("/api/samples", response_model=list[SampleProblem])

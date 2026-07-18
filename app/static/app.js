@@ -89,10 +89,13 @@ const I18N = {
     textCleared: "已清空题目文字",
     voiceInput: "语音输入",
     voiceStop: "停止录音",
-    voiceListening: "正在听…请说话",
+    voiceListening: "正在录音…再说完点一次结束",
+    voiceRecognizing: "正在识别…",
     voiceDone: "已写入文字，可继续改",
-    voiceUnsupported: "当前浏览器不支持语音输入，请用 Chrome / Edge，并允许麦克风权限。",
+    voiceUnsupported: "无法使用麦克风。请用 Chrome / Edge，并允许麦克风权限。",
     voiceError: "语音识别失败，请检查麦克风权限后重试。",
+    voiceNoKey: "未配置百炼 API Key（DASHSCOPE_API_KEY），语音识别不可用。",
+    voiceEmpty: "没有识别出文字，请再试一次。",
     answerLabel: "你的回答",
   },
   en: {
@@ -165,10 +168,13 @@ const I18N = {
     textCleared: "Problem text cleared",
     voiceInput: "Voice input",
     voiceStop: "Stop",
-    voiceListening: "Listening… please speak",
+    voiceListening: "Recording… tap again when done",
+    voiceRecognizing: "Recognizing…",
     voiceDone: "Text inserted. You can edit it.",
-    voiceUnsupported: "Speech recognition not supported. Use Chrome/Edge and allow the microphone.",
+    voiceUnsupported: "Microphone unavailable. Use Chrome/Edge and allow mic access.",
     voiceError: "Speech recognition failed. Check mic permission and try again.",
+    voiceNoKey: "DASHSCOPE_API_KEY is not configured. Voice input unavailable.",
+    voiceEmpty: "No speech detected. Please try again.",
     answerLabel: "Your answer",
   },
 };
@@ -209,7 +215,7 @@ const chatLog = $("chatLog");
 const startStatus = $("startStatus");
 // ===== Language switcher =====
 function applyLang() {
-  stopVoiceInput();
+  stopVoiceInput(false);
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const key = el.getAttribute("data-i18n");
     const val = t(key);
@@ -336,103 +342,188 @@ function showPreview(file) {
 }
 
 // ===== 语音输入（Web Speech API，Chrome / Edge）=====
-let voiceRec = null;
+let voiceRecorder = null;
+let voiceStream = null;
+let voiceChunks = [];
 let voiceTarget = null; // "problem" | "answer"
+let voiceBusy = false;
 
-function getSpeechRecognition() {
-  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+function pickRecorderMime() {
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+  ];
+  if (!window.MediaRecorder) return "";
+  for (const type of candidates) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return "";
 }
 
-function voiceUi(target, listening) {
+function voiceUi(target, listening, statusText) {
   const btn = $(target === "answer" ? "btnVoiceAnswer" : "btnVoiceProblem");
   const status = $(target === "answer" ? "voiceAnswerStatus" : "voiceProblemStatus");
   if (btn) {
-    btn.classList.toggle("listening", listening);
+    btn.classList.toggle("listening", !!listening);
     btn.textContent = listening ? t("voiceStop") : t("voiceInput");
+    btn.disabled = !!voiceBusy && !listening;
   }
   if (status) {
     status.classList.remove("bad");
-    status.textContent = listening ? t("voiceListening") : "";
+    if (statusText != null) status.textContent = statusText;
+    else status.textContent = listening ? t("voiceListening") : "";
   }
 }
 
-function stopVoiceInput() {
-  if (voiceRec) {
-    try { voiceRec.onresult = null; voiceRec.onerror = null; voiceRec.onend = null; voiceRec.stop(); } catch (_) {}
-    voiceRec = null;
+function cleanupVoiceStream() {
+  if (voiceStream) {
+    try { voiceStream.getTracks().forEach((tr) => tr.stop()); } catch (_) {}
+    voiceStream = null;
   }
-  if (voiceTarget) voiceUi(voiceTarget, false);
+  voiceRecorder = null;
+  voiceChunks = [];
+}
+
+function stopVoiceInput(finalize) {
+  const rec = voiceRecorder;
+  if (rec && rec.state !== "inactive") {
+    try { rec.stop(); } catch (_) {}
+    // onstop handles upload when finalize !== false
+    if (finalize === false) {
+      rec.onstop = null;
+      cleanupVoiceStream();
+      if (voiceTarget) voiceUi(voiceTarget, false, "");
+      voiceTarget = null;
+    }
+    return;
+  }
+  cleanupVoiceStream();
+  if (voiceTarget) voiceUi(voiceTarget, false, "");
   voiceTarget = null;
 }
 
-function toggleVoiceInput(target) {
-  const SR = getSpeechRecognition();
-  if (!SR) {
-    alert(t("voiceUnsupported"));
-    return;
-  }
-  // 再点一次：停止
-  if (voiceRec && voiceTarget === target) {
-    stopVoiceInput();
-    return;
-  }
-  stopVoiceInput();
-
+async function uploadVoiceBlob(blob, target) {
   const box = target === "answer" ? answerBox : problemText;
   const status = $(target === "answer" ? "voiceAnswerStatus" : "voiceProblemStatus");
-  const rec = new SR();
-  rec.lang = currentLang === "en" ? "en-US" : "zh-CN";
-  rec.continuous = true;
-  rec.interimResults = true;
-  rec.maxAlternatives = 1;
+  voiceBusy = true;
+  voiceUi(target, false, t("voiceRecognizing"));
 
-  let finalized = "";
-  const base = (box.value || "").replace(/\s+$/, "");
-  const prefix = base ? base + (base.endsWith("\n") ? "" : " ") : "";
+  const form = new FormData();
+  const ext = (blob.type || "").includes("mp4") ? "m4a"
+    : (blob.type || "").includes("ogg") ? "ogg"
+    : "webm";
+  form.append("file", blob, `voice.${ext}`);
 
-  rec.onresult = (event) => {
-    let interim = "";
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const piece = event.results[i][0].transcript || "";
-      if (event.results[i].isFinal) finalized += piece;
-      else interim += piece;
-    }
-    box.value = prefix + finalized + interim;
-    box.dispatchEvent(new Event("input", { bubbles: true }));
-  };
-
-  rec.onerror = (event) => {
-    if (status) {
-      status.textContent = event.error === "not-allowed"
-        ? t("voiceError")
-        : t("voiceError");
-      status.classList.add("bad");
-    }
-    stopVoiceInput();
-  };
-
-  rec.onend = () => {
-    // 连续模式有时会自动结束；若仍是当前会话则提示完成
-    if (voiceRec === rec) {
-      const s = $(voiceTarget === "answer" ? "voiceAnswerStatus" : "voiceProblemStatus");
-      if (s && !s.classList.contains("bad")) s.textContent = t("voiceDone");
-      voiceUi(voiceTarget, false);
-      voiceRec = null;
-      voiceTarget = null;
-    }
-  };
-
-  voiceRec = rec;
-  voiceTarget = target;
-  voiceUi(target, true);
   try {
-    rec.start();
+    const res = await fetch(`/api/asr?lang=${encodeURIComponent(currentLang === "en" ? "en" : "zh")}`, {
+      method: "POST",
+      body: form,
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      if (status) {
+        status.textContent = data.message || t("voiceError");
+        status.classList.add("bad");
+      }
+      return;
+    }
+    const text = (data.text || "").trim();
+    if (!text) {
+      if (status) {
+        status.textContent = t("voiceEmpty");
+        status.classList.add("bad");
+      }
+      return;
+    }
+    const base = (box.value || "").replace(/\s+$/, "");
+    box.value = base ? `${base}${base.endsWith("\n") ? "" : " "}${text}` : text;
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    if (status) {
+      status.classList.remove("bad");
+      status.textContent = t("voiceDone");
+    }
   } catch (_) {
     if (status) {
       status.textContent = t("voiceError");
       status.classList.add("bad");
     }
-    stopVoiceInput();
+  } finally {
+    voiceBusy = false;
+    voiceUi(target, false, status ? status.textContent : "");
+    voiceTarget = null;
+  }
+}
+
+async function toggleVoiceInput(target) {
+  if (voiceBusy) return;
+
+  if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
+    alert(t("voiceUnsupported"));
+    return;
+  }
+
+  // 再点一次：结束录音并识别
+  if (voiceRecorder && voiceTarget === target) {
+    voiceUi(target, false, t("voiceRecognizing"));
+    try { voiceRecorder.stop(); } catch (_) {}
+    return;
+  }
+
+  // 切换目标：丢掉当前录音
+  if (voiceRecorder) stopVoiceInput(false);
+
+  const status = $(target === "answer" ? "voiceAnswerStatus" : "voiceProblemStatus");
+  const mime = pickRecorderMime();
+
+  try {
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (_) {
+    if (status) {
+      status.textContent = t("voiceError");
+      status.classList.add("bad");
+    }
+    return;
+  }
+
+  try {
+    voiceChunks = [];
+    voiceRecorder = mime
+      ? new MediaRecorder(voiceStream, { mimeType: mime })
+      : new MediaRecorder(voiceStream);
+    const usedType = voiceRecorder.mimeType || mime || "audio/webm";
+
+    voiceRecorder.ondataavailable = (ev) => {
+      if (ev.data && ev.data.size > 0) voiceChunks.push(ev.data);
+    };
+    voiceRecorder.onstop = async () => {
+      const chunks = voiceChunks.slice();
+      const blobType = usedType.split(";")[0] || "audio/webm";
+      cleanupVoiceStream();
+      const blob = new Blob(chunks, { type: blobType });
+      if (!blob.size) {
+        if (status) {
+          status.textContent = t("voiceEmpty");
+          status.classList.add("bad");
+        }
+        voiceTarget = null;
+        voiceUi(target, false, status ? status.textContent : "");
+        return;
+      }
+      await uploadVoiceBlob(blob, target);
+    };
+
+    voiceTarget = target;
+    voiceUi(target, true);
+    voiceRecorder.start();
+  } catch (_) {
+    cleanupVoiceStream();
+    if (status) {
+      status.textContent = t("voiceError");
+      status.classList.add("bad");
+    }
   }
 }
 

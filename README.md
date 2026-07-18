@@ -63,8 +63,93 @@ python -m venv .venv
 - **有图题**：上传/拍照 → 自动识字+描图 → 可叠加原图拖动对齐 → AI 引导
 - 无原图时不会显示「叠加原图 / 只看原图」
 
+## 部署到树莓派
+
+本质不变：树莓派当「小服务器」，手机/电脑浏览器访问它。
+
+### 推荐硬件
+
+- Raspberry Pi 4 / 5（建议 **4GB+** 内存）
+- 已装 **Raspberry Pi OS (64-bit)**，能上网
+- Pi 3 也能跑，但 OCR/装依赖会更慢
+
+### 步骤
+
+1. **把项目拷到树莓派**（任选）
+   - U 盘 / SCP：`scp -r triangle-guide pi@树莓派IP:~/`
+   - 或在派上：`git clone ...` 后进入 `triangle-guide`
+
+2. **装系统依赖**（在派上执行一次）
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip
+```
+
+3. **配置密钥**
+
+```bash
+cd ~/triangle-guide   # 按你的实际路径
+cp .env.example .env
+nano .env             # 填入 DEEPSEEK_API_KEY、DASHSCOPE_API_KEY
+```
+
+4. **启动**
+
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+首次 `pip install` 在树莓派上可能要十几分钟，属正常。
+
+5. **怎么打开页面**
+   - 查派的 IP：`hostname -I`（例如 `192.168.1.20`）
+   - 同一 Wi‑Fi 下，手机/电脑浏览器打开：`http://192.168.1.20:8001`
+   - 派本机浏览器：`http://127.0.0.1:8001`
+
+> `start.sh` 默认监听 `0.0.0.0:8001`，局域网才能访问。若只想本机用，可：  
+> `HOST=127.0.0.1 ./start.sh`
+
+### 开机自启（可选）
+
+用 systemd 建服务，例如 `/etc/systemd/system/triangle-guide.service`：
+
+```ini
+[Unit]
+Description=Triangle Guide
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/triangle-guide
+ExecStart=/home/pi/triangle-guide/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+然后：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now triangle-guide
+```
+
+### 树莓派上要注意
+
+| 点 | 说明 |
+|----|------|
+| 必须能上网 | AI 仍走云端（DeepSeek / 百炼），派只跑网页服务 |
+| OCR 偏重 | `ddddocr` 首次加载慢；内存不够可先只测文字题 |
+| 摄像头 | 网页「拍照」用的是**访问端**设备摄像头（手机浏览器），不是必须插派摄像头 |
+| 防火墙 | 若开了 ufw：`sudo ufw allow 8001` |
+
 ## 常见问题
 
 - **打不开页面**：确认终端里 uvicorn 在跑，地址是 `8001` 端口  
 - **看图失败**：检查 `DASHSCOPE_API_KEY` 与百炼余额/开通  
 - **引导失败**：检查 `DEEPSEEK_API_KEY` 与账户余额  
+- **语音输入失败**：语音走百炼 ASR（同一把 `DASHSCOPE_API_KEY`），请用 Chrome/Edge 并允许麦克风；点一次开始录音，再点一次结束并识别  
+- **局域网打不开**：确认用了 `0.0.0.0` 启动，且电脑/手机与派在同一网络  
