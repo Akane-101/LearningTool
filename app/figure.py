@@ -6,6 +6,12 @@ import math
 from typing import Any, Optional
 
 from .parser import parse_problem_text
+from .solid import (
+    figure_solid_from_text,
+    is_solid_figure,
+    normalize_solid,
+    render_solid_svg,
+)
 
 
 def _parse_point(raw: Any) -> Optional[tuple[float, float]]:
@@ -131,8 +137,12 @@ def normalize_figure(
 ) -> Optional[dict[str, Any]]:
     if not isinstance(raw, dict):
         return None
+    if is_solid_figure(raw):
+        return normalize_solid(raw, img_w=img_w, img_h=img_h)
+
     ftype = str(raw.get("type") or "triangle").lower()
     if ftype not in ("triangle", "tri"):
+        # 未知类型先当三角形；纯文字立体题走 figure_from_problem_text
         ftype = "triangle"
 
     vertices = raw.get("vertices") or ["A", "B", "C"]
@@ -205,7 +215,11 @@ def normalize_figure(
 
 
 def figure_from_problem_text(text: str) -> Optional[dict[str, Any]]:
-    """题目里有三角形/已知角时，自动生成一张基础示意图。"""
+    """题目里有三角形/已知角/立体时，自动生成一张基础示意图。"""
+    solid = figure_solid_from_text(text or "")
+    if solid:
+        return solid
+
     problem = parse_problem_text(text)
     has_triangle = "三角" in text or "△" in text or "Δ" in text or "triangle" in text.lower()
     if not has_triangle and not problem.known_angles and not problem.find_targets:
@@ -366,7 +380,10 @@ def build_figure_payload(ai_figure: Any, problem_text: str = "") -> Optional[dic
     if fig is None:
         return None
     try:
-        svg = render_triangle_svg(fig)
+        if fig.get("type") == "solid":
+            svg = render_solid_svg(fig)
+        else:
+            svg = render_triangle_svg(fig)
     except Exception:
         return None
     return {

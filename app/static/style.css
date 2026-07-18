@@ -443,11 +443,24 @@ textarea {
 
 .figure-layer,
 .photo-layer,
+.solid-canvas,
 .draw-canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.solid-canvas {
+  z-index: 2;
+  display: block;
+  background: #fffdf8;
+  cursor: grab;
+  touch-action: none;
+}
+
+.solid-canvas:active {
+  cursor: grabbing;
 }
 
 .figure-layer {

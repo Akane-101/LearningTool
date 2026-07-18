@@ -21,7 +21,7 @@ const GEO_H = 280;
 const I18N = {
   zh: {
     title: "AI 带你一步一步解题",
-    subtitle: "拍照看图 + 文字 → 百炼识几何图，DeepSeek 逐步引导",
+    subtitle: "平面/立体几何 · 拍照看图 · 根据题目生成示意图 · DeepSeek 逐步引导",
     step1: "1. 输入题目",
     dropTitle: "把题目图片拖到这里，或按 Ctrl+V 粘贴截图",
     dropHint: "也支持手机拍照、相册选图",
@@ -72,7 +72,9 @@ const I18N = {
     noCamera: "当前浏览器不支持摄像头，请用「拍照」或上传图片。",
     workbenchTitle: "几何画板",
     workbenchHint: "拖动点/边/虚线 · 可叠原图或只看原图 · 拖动时可还原",
+    workbenchHintSolid: "拖动可旋转查看 · 形状固定不可拖边 · 画笔可标注",
     toolMove: "拖动",
+    toolRotate: "旋转",
     toolPen: "画笔",
     toolEraser: "橡皮",
     toolClear: "清空标注",
@@ -100,7 +102,7 @@ const I18N = {
   },
   en: {
     title: "AI Guides You Step by Step",
-    subtitle: "Photo + text → Bailian reads the figure, DeepSeek guides",
+    subtitle: "Plane & solid geometry · photo · auto figure · DeepSeek guides",
     step1: "1. Enter the Problem",
     dropTitle: "Drag an image here, or press Ctrl+V to paste a screenshot",
     dropHint: "Also supports phone camera and photo gallery",
@@ -151,7 +153,9 @@ const I18N = {
     noCamera: "Camera not supported by this browser.",
     workbenchTitle: "Geometry Board",
     workbenchHint: "Drag points/edges · overlay or photo-only · reset while dragging",
+    workbenchHintSolid: "Drag to rotate view · shape is locked · pen for notes",
     toolMove: "Move",
+    toolRotate: "Rotate",
     toolPen: "Pen",
     toolEraser: "Eraser",
     toolClear: "Clear marks",
@@ -189,6 +193,10 @@ const SAMPLES = {
     { title: "2024·直角三角形+互余", text: "在Rt△ABC中，∠C=90°，∠A=2∠B，求∠A和∠B的度数。" },
     { title: "2023·三角形外角性质", text: "如图，在△ABC中，∠A=30°，∠B=50°，延长BC至点D，求∠ACD的度数。" },
     { title: "2024·等边三角形+平行线", text: "在等边△ABC中，D是AC边上一点，过D作DE∥AB交BC于E，若∠EDC=20°，求∠BDE的度数。" },
+    { title: "立体·正方体表面积", text: "一个正方体的棱长为 6cm，求它的表面积。" },
+    { title: "立体·长方体体积", text: "一个长方体的长、宽、高分别是 5cm、3cm、4cm，求它的体积和表面积。" },
+    { title: "立体·圆柱侧面积", text: "一个圆柱的底面半径是 3cm，高是 8cm，求它的侧面积和体积。（π 取 3.14）" },
+    { title: "立体·圆锥体积", text: "一个圆锥的底面半径为 4cm，高为 9cm，求它的体积。（π 取 3.14）" },
   ],
   en: [
     { title: "Triangle Angle Sum", text: "In triangle ABC, angle A = 50°, angle B = 60°. Find angle C." },
@@ -199,6 +207,10 @@ const SAMPLES = {
     { title: "Right Triangle", text: "In right triangle ABC, angle C = 90°, angle A = 2 × angle B. Find angles A and B." },
     { title: "Exterior Angle", text: "In triangle ABC, angle A = 30°, angle B = 50°. Extend BC to point D. Find angle ACD." },
     { title: "Equilateral + Parallel", text: "In equilateral triangle ABC, D is on AC. DE ∥ AB meets BC at E. If angle EDC = 20°, find angle BDE." },
+    { title: "Solid · Cube surface", text: "A cube has edge length 6 cm. Find its surface area." },
+    { title: "Solid · Cuboid volume", text: "A rectangular prism has length 5 cm, width 3 cm, height 4 cm. Find its volume and surface area." },
+    { title: "Solid · Cylinder", text: "A cylinder has base radius 3 cm and height 8 cm. Find its lateral area and volume. (Use π = 3.14)" },
+    { title: "Solid · Cone volume", text: "A cone has base radius 4 cm and height 9 cm. Find its volume. (Use π = 3.14)" },
   ],
 };
 
@@ -647,16 +659,102 @@ function cloneFigure(fig) {
   return fig ? JSON.parse(JSON.stringify(fig)) : null;
 }
 
+function isSolidFigure(fig) {
+  return !!(fig && (fig.type === "solid" || fig.solid));
+}
+
+function setWorkbenchHint(solid) {
+  const hint = document.querySelector("#workbench [data-i18n='workbenchHint']");
+  if (!hint) return;
+  hint.textContent = solid ? t("workbenchHintSolid") : t("workbenchHint");
+}
+
+function syncSolidTools(solid) {
+  const solidCanvas = $("solidCanvas");
+  const fig = $("figureLayer");
+  const moveBtn = $("toolMove");
+  const resetBtn = $("toolResetGeo");
+  const bgFig = $("toolBgFigure");
+  if (solid) {
+    if (resetBtn) resetBtn.hidden = true;
+    if (bgFig) bgFig.hidden = true;
+    if (moveBtn) {
+      moveBtn.hidden = false;
+      moveBtn.textContent = t("toolRotate");
+    }
+    ["toolBgPhoto", "toolBgPhotoOnly"].forEach((id) => {
+      const el = $(id);
+      if (el) el.hidden = true;
+    });
+  } else {
+    if (bgFig) bgFig.hidden = false;
+    if (moveBtn) {
+      moveBtn.hidden = false;
+      moveBtn.textContent = t("toolMove");
+    }
+    if (resetBtn) resetBtn.hidden = !(geoBaseline && drawMode === "move");
+    syncPhotoToolsVisibility();
+  }
+  if (solidCanvas) solidCanvas.hidden = !solid;
+  if (fig) {
+    fig.style.visibility = solid ? "hidden" : "";
+    if (solid) fig.innerHTML = "";
+  }
+  setWorkbenchHint(solid);
+}
+
+function mountSolidWorkbench(figureData) {
+  const solidCanvas = $("solidCanvas");
+  if (!solidCanvas || !window.Solid3D) return;
+  syncSolidTools(true);
+  if (solidCanvas.dataset.mounted === "1") {
+    Solid3D.setFigure(figureData);
+  } else {
+    Solid3D.mount(solidCanvas, figureData);
+    solidCanvas.dataset.mounted = "1";
+  }
+  Solid3D.resize();
+  // 默认旋转视角；形状仍锁定，不会变成可拖边
+  setInteractionMode("move");
+}
+
+function unmountSolidWorkbench() {
+  const solidCanvas = $("solidCanvas");
+  if (window.Solid3D) {
+    try { Solid3D.destroy(); } catch (_) {}
+  }
+  if (solidCanvas) {
+    solidCanvas.hidden = true;
+    delete solidCanvas.dataset.mounted;
+  }
+  syncSolidTools(false);
+}
+
 function showWorkbench(svg, figureData) {
   if (svg) latestFigureSvg = svg;
+  // 立体题锁定：后续若 AI 返回平面三角形，也不替换已有立体图（避免又能拖边）
   if (figureData) {
-    latestFigureData = figureData;
-    // 新图形到来时更新还原基准
-    geoBaseline = cloneFigure(figureData);
+    if (isSolidFigure(latestFigureData) && !isSolidFigure(figureData)) {
+      figureData = null;
+    } else {
+      latestFigureData = figureData;
+      geoBaseline = cloneFigure(figureData);
+    }
   }
   const wb = $("workbench");
   if (!wb) return;
   wb.hidden = false;
+
+  if (isSolidFigure(latestFigureData)) {
+    bgMode = "figure";
+    syncPhotoToolsVisibility();
+    mountSolidWorkbench(latestFigureData);
+    resizeCanvas();
+    syncBgMode();
+    return;
+  }
+
+  unmountSolidWorkbench();
 
   // 有原题照片时默认叠加：矢量描摹叠在原图上
   if (currentImageBase64 && bgMode !== "photo") bgMode = "overlay";
@@ -672,7 +770,7 @@ function showWorkbench(svg, figureData) {
   if (currentImageBase64) {
     const photo = $("photoLayer");
     photo.onload = () => {
-      if (latestFigureData && bgMode !== "photo") {
+      if (latestFigureData && bgMode !== "photo" && !isSolidFigure(latestFigureData)) {
         initGeoState(latestFigureData);
         renderInteractiveGeo();
       }
@@ -1166,15 +1264,22 @@ function setInteractionMode(mode) {
   const penBtn = $("toolPen");
   const eraserBtn = $("toolEraser");
   const resetBtn = $("toolResetGeo");
-  if (moveBtn) moveBtn.classList.toggle("active", mode === "move");
+  const solid = isSolidFigure(latestFigureData);
+  if (moveBtn) {
+    moveBtn.classList.toggle("active", mode === "move");
+    moveBtn.textContent = solid ? t("toolRotate") : t("toolMove");
+  }
   if (penBtn) penBtn.classList.toggle("active", mode === "pen");
   if (eraserBtn) eraserBtn.classList.toggle("active", mode === "eraser");
-  if (resetBtn) resetBtn.hidden = mode !== "move";
+  if (resetBtn) resetBtn.hidden = solid || mode !== "move" || !geoBaseline;
   if (canvas) {
-    // 只看原图时画布不拦截；拖动时穿透以便拖图形
+    // 立体旋转 / 平面拖动 / 只看原图：画笔层穿透
     const pass = mode === "move" || bgMode === "photo";
     canvas.classList.toggle("passthrough", pass);
-    canvas.style.cursor = mode === "move" || bgMode === "photo" ? "default" : "crosshair";
+    canvas.style.cursor = pass ? "default" : "crosshair";
+  }
+  if (solid && window.Solid3D && typeof Solid3D.setRotateEnabled === "function") {
+    Solid3D.setRotateEnabled(mode === "move");
   }
 }
 
@@ -1192,6 +1297,8 @@ function syncBgMode() {
   syncPhotoToolsVisibility();
   const fig = $("figureLayer");
   const photo = $("photoLayer");
+  const solidCanvas = $("solidCanvas");
+  const solid = isSolidFigure(latestFigureData);
   const hasPhoto = Boolean(currentImageBase64);
   const btnFig = $("toolBgFigure");
   const btnOverlay = $("toolBgPhoto");
@@ -1199,6 +1306,19 @@ function syncBgMode() {
   if (btnFig) btnFig.classList.remove("active");
   if (btnOverlay) btnOverlay.classList.remove("active");
   if (btnPhoto) btnPhoto.classList.remove("active");
+
+  if (solid) {
+    bgMode = "figure";
+    if (photo) photo.hidden = true;
+    if (fig) {
+      fig.style.visibility = "hidden";
+      fig.classList.remove("overlay");
+    }
+    if (solidCanvas) solidCanvas.hidden = false;
+    setInteractionMode(drawMode);
+    if (window.Solid3D) Solid3D.resize();
+    return;
+  }
 
   if ((bgMode === "overlay" || bgMode === "photo") && !hasPhoto) {
     bgMode = "figure";
@@ -1251,6 +1371,7 @@ function resizeCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
+  if (isSolidFigure(latestFigureData) && window.Solid3D) Solid3D.resize();
 }
 
 function canvasPos(e) {

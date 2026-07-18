@@ -20,10 +20,11 @@ from .config import (
     api_key_configured,
 )
 from .figure import build_figure_payload, normalize_figure
+from .solid import figure_solid_from_text, is_solid_figure
 from .vision import analyze_geometry_image
 
 SYSTEM_PROMPTS = {
-    "zh": """你是一位耐心的初中数学老师，辅导学生解数学题（以几何角度题、三角形题为主，也覆盖其他初中数学题型）。
+    "zh": """你是一位耐心的初中数学老师，辅导学生解数学题（平面几何、立体几何与其他初中题型）。
 
 教学原则：
 1. **只给大致思路，不要拆得太细。** 一次只点拨一个方向，让学生自己往下做。
@@ -32,7 +33,8 @@ SYSTEM_PROMPTS = {
 4. **能识别并接续学生已有的做题过程。**
 5. 语言简单、清楚，适合初中生。
 6. 不要直接泄露最终答案，除非学生明确请求完整解答。
-7. **几何题尽量配示意图。** 若题目里已有「根据原题图片识别的图形」，你的 figure 必须严格按该描述还原（点、线、已知角、所求角），不要另画一张无关的图。
+7. **几何题尽量配示意图。** 若题目里已有「根据原题图片识别的图形」，你的 figure 必须严格按该描述还原，不要另画无关图形。
+8. **立体几何题请返回立体 figure**（正方体/长方体/三棱柱/四棱锥/圆柱/圆锥），便于前端生成可旋转立体图。
 
 每次回复必须是合法 JSON（不要 markdown 代码块），格式：
 {
@@ -45,7 +47,7 @@ SYSTEM_PROMPTS = {
   "figure": null或对象
 }
 
-figure 对象（几何题需要画图时填写，否则 null）：
+平面几何 figure（三角形等）：
 {
   "type": "triangle",
   "vertices": ["A", "B", "C"],
@@ -57,14 +59,22 @@ figure 对象（几何题需要画图时填写，否则 null）：
   "caption": "标出已知角，求∠C"
 }
 
+立体几何 figure（表面积/体积/展开图等）：
+{
+  "type": "solid",
+  "solid": "cube|rectangular_prism|triangular_prism|square_pyramid|cylinder|cone",
+  "dims": {"length": 4, "width": 3, "height": 5, "radius": 2},
+  "labels": {"length": "4", "width": "3", "height": "5"},
+  "highlight_edges": [["A", "B"]],
+  "caption": "长方体示意图"
+}
+
 说明：
-- points 用 0~1 坐标（左上原点，y 向下），必须贴近原题图形形状，不要总画成等腰
-- angle_labels 填已知角度或 "?" 表示所求
-- highlight 填需要强调的角（顶点字母）
-- 有角平分线/中点时用 extra_points + segments
-- 不要编造题目没有的数据；未知用 "?"
+- 平面 points 用 0~1 坐标（左上原点，y 向下），贴近原题形状
+- 立体 dims 用题目给出的长宽高/棱长/底面半径；未知可省略，用合理示意值
+- labels 写尺寸文字（如 "4cm" 或 "a"）；不要编造题目没有的数据
 """,
-    "en": """You are a patient middle school math teacher helping with geometry and other middle-school math.
+    "en": """You are a patient middle school math teacher helping with plane geometry, solid geometry, and other middle-school math.
 
 Teaching principles:
 1. Give only the big-picture idea, not too detailed.
@@ -73,7 +83,8 @@ Teaching principles:
 4. Recognize and continue from the student's existing work.
 5. Use simple language.
 6. Don't reveal the final answer unless asked for the full solution.
-7. **For geometry, include a figure when helpful.** If the problem includes a section "Geometry from the original photo", your figure MUST match that description (points, lines, known/unknown angles). Do not invent a different diagram.
+7. **For geometry, include a figure when helpful.** Match any photo-derived geometry description.
+8. **For solid geometry, return a solid figure** so the UI can render a rotatable 3D sketch.
 
 Each reply must be valid JSON (no markdown), format:
 {
@@ -86,7 +97,7 @@ Each reply must be valid JSON (no markdown), format:
   "figure": null or object
 }
 
-figure object when drawing is needed:
+Plane figure:
 {
   "type": "triangle",
   "vertices": ["A", "B", "C"],
@@ -98,7 +109,17 @@ figure object when drawing is needed:
   "caption": "Mark known angles, find angle C"
 }
 
-Rules: points use 0~1 coords matching the real figure shape; do not invent data; use "?" for unknowns.
+Solid figure:
+{
+  "type": "solid",
+  "solid": "cube|rectangular_prism|triangular_prism|square_pyramid|cylinder|cone",
+  "dims": {"length": 4, "width": 3, "height": 5, "radius": 2},
+  "labels": {"length": "4", "width": "3", "height": "5"},
+  "highlight_edges": [["A", "B"]],
+  "caption": "Rectangular prism"
+}
+
+Rules: do not invent data; use given dimensions when present.
 """,
 }
 
@@ -215,8 +236,20 @@ def _attach_figure(
     preferred_figure: Optional[dict[str, Any]] = None,
     force_fallback: bool = False,
 ) -> dict[str, Any]:
-    """优先用看图得到的 figure，其次 AI 的 figure，再文字兜底。"""
-    raw_fig = preferred_figure or ai.get("figure")
+    """优先用看图/立体锁定 figure，其次 AI 的 figure，再文字兜底。"""
+    ai_fig = ai.get("figure")
+    # 立体题锁定：已有立体结构时，不让 AI 的平面三角形覆盖
+    if preferred_figure and is_solid_figure(preferred_figure):
+        raw_fig = preferred_figure
+    elif is_solid_figure(ai_fig):
+        raw_fig = ai_fig
+    else:
+        raw_fig = preferred_figure or ai_fig
+        # 题干是立体题但 AI 只给了平面图时，改用文字立体示意图
+        text_solid = figure_solid_from_text(problem_text or "")
+        if text_solid and not is_solid_figure(raw_fig):
+            raw_fig = text_solid
+
     fig_payload = build_figure_payload(raw_fig, problem_text if force_fallback else "")
     if fig_payload is None and force_fallback:
         fig_payload = build_figure_payload(None, problem_text)
@@ -321,8 +354,8 @@ def start_session(
         {"role": "user", "content": text_part},
     ]
     ai = _call_ai(messages)
-    # 有原题看图结果时优先用它画板；否则尽量用 AI / 文字兜底
-    preferred = vision_figure
+    # 有原题看图结果时优先用它画板；立体题用文字立体结构锁定；否则 AI / 文字兜底
+    preferred = vision_figure or figure_solid_from_text(enriched)
     ai = _attach_figure(
         ai,
         enriched,
@@ -341,7 +374,9 @@ def start_session(
         "lang": lang,
         "has_image": bool(image_base64),
         "geometry_description": geom,
-        "vision_figure": vision_figure,
+        "vision_figure": vision_figure or (
+            ai.get("figure_data") if is_solid_figure(ai.get("figure_data")) else None
+        ),
         "completed": bool(ai.get("completed")),
         "final_solution": ai.get("final_solution") or "",
         "turns": 1,
@@ -414,7 +449,7 @@ def reply_session(
     messages.append({"role": "user", "content": user_content})
     ai = _call_ai(messages)
     preferred = session.get("vision_figure")
-    # 提示时：若 AI 没给 figure，用原题看图结果；否则仍优先原题图结构（标注可更新）
+    # 立体锁定 / 原题图：始终作为 preferred，避免后续变成可拖边的平面图
     if want_hint and not ai.get("figure") and preferred:
         ai["figure"] = preferred
     elif preferred and not ai.get("figure"):
@@ -422,9 +457,11 @@ def reply_session(
     ai = _attach_figure(
         ai,
         session.get("problem_text", ""),
-        preferred_figure=None if ai.get("figure") else preferred,
+        preferred_figure=preferred,
         force_fallback=want_hint and not preferred,
     )
+    if is_solid_figure(ai.get("figure_data")) and not session.get("vision_figure"):
+        session["vision_figure"] = ai.get("figure_data")
     messages.append({"role": "assistant", "content": json.dumps(
         {k: v for k, v in ai.items() if k not in ("figure_svg", "figure_caption", "figure_data")},
         ensure_ascii=False,
