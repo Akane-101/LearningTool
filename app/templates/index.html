@@ -3,152 +3,232 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI 解题引导 · Math Tutor</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260719c" />
+  <title>解三角形</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Inter:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css?v=20260719g" />
 </head>
 <body>
-  <div class="page">
-    <header class="hero">
-      <div class="hero-row">
-        <div>
-          <h1 data-i18n="title">AI 带你一步一步解题</h1>
-          <p class="sub" data-i18n="subtitle">拍照看图 + 文字 → 百炼识几何图，DeepSeek 逐步引导</p>
-        </div>
-        <div class="lang-switch">
-          <button type="button" id="btnLangZh" class="lang-btn active" data-lang="zh">中文</button>
-          <button type="button" id="btnLangEn" class="lang-btn" data-lang="en">EN</button>
-        </div>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="side-logo" aria-hidden="true">
+        <img src="/static/figma-page1/logo-sidebar.png" alt="" />
       </div>
-    </header>
-
-    <section class="panel">
-      <h2 data-i18n="step1">1. 输入题目</h2>
-      <div id="dropZone" class="drop-zone" tabindex="0">
-        <p class="drop-title" data-i18n="dropTitle">把题目图片拖到这里，或按 Ctrl+V 粘贴截图</p>
-        <p class="drop-hint" data-i18n="dropHint">也支持手机拍照、相册选图</p>
-        <div class="actions center">
-          <label class="btn primary file-btn" data-i18n="upload">
-            上传图片
-            <input type="file" id="fileInput" accept="image/*" hidden />
-          </label>
-          <label class="btn ghost file-btn" data-i18n="takePhoto">
-            拍照
-            <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden />
-          </label>
-          <button type="button" id="btnOpenCamera" class="btn ghost" data-i18n="openCamera">打开摄像头</button>
-          <button type="button" id="btnClearImage" class="btn ghost" data-i18n="clearImage">清空图片</button>
-        </div>
-        <img id="preview" class="preview" alt="" hidden />
-        <p id="ocrStatus" class="meta"></p>
+      <div class="side-mid">
+        <!-- 上方：切换语言 · 中文高亮「文」，英文高亮「A」 -->
+        <button type="button" class="side-btn lang-switch" id="btnLangToggle" title="切换语言" aria-label="切换语言">
+          <span class="lang-glyph" aria-hidden="true">
+            <span class="lang-zh">文</span><span class="lang-en">A</span>
+          </span>
+        </button>
+        <!-- 下方：回到开始界面 -->
+        <button type="button" class="side-btn" id="navHome" data-screen="home" title="首页" aria-label="回到开始界面">
+          <svg class="home-icon" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#123873" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 11.5 12 4l8 7.5"/>
+            <path d="M6.5 10.5V20h11V10.5"/>
+            <path d="M10 20v-5.5h4V20"/>
+          </svg>
+        </button>
       </div>
+      <!-- 兼容旧 JS 绑定 -->
+      <button type="button" id="btnLangZh" class="visually-hidden" data-lang="zh">中文</button>
+      <button type="button" id="btnLangEn" class="visually-hidden" data-lang="en">EN</button>
+    </aside>
 
-      <div id="cameraPanel" class="camera-panel" hidden>
-        <video id="cameraVideo" autoplay playsinline></video>
-        <div class="actions">
-          <button type="button" id="btnSnap" class="btn primary" data-i18n="snap">拍照识别</button>
-          <button type="button" id="btnCloseCamera" class="btn ghost" data-i18n="closeCamera">关闭摄像头</button>
-        </div>
-      </div>
-
-      <div class="subhead-row">
-        <h2 class="subhead" data-i18n="problemLabel">题目文字（可修改，也可包含你已有的做题过程）</h2>
-        <div class="subhead-actions">
-          <button type="button" id="btnVoiceProblem" class="btn ghost voice-btn" data-i18n="voiceInput">语音输入</button>
-          <button type="button" id="btnClearText" class="btn ghost" data-i18n="clearText">清空文字</button>
-        </div>
-      </div>
-      <textarea id="problemText" rows="5"></textarea>
-      <p id="voiceProblemStatus" class="meta voice-status"></p>
-      <div class="samples" id="samples"></div>
-      <div class="actions">
-        <button type="button" id="btnStart" class="btn primary" data-i18n="startGuide">开始 AI 引导</button>
-      </div>
-      <p id="startStatus" class="meta"></p>
-    </section>
-
-    <section class="panel" id="guidePanel" hidden>
-      <h2 data-i18n="step2">2. AI 逐步引导</h2>
-
-      <div id="workbench" class="workbench" hidden>
-        <div class="workbench-head">
-          <h3 data-i18n="workbenchTitle">几何画板</h3>
-          <p class="meta" data-i18n="workbenchHint">拖动点/边/虚线 · 可叠原图或只看原图 · 拖动时可还原</p>
-        </div>
-        <div class="workbench-toolbar">
-          <button type="button" id="toolMove" class="tool-btn active" data-i18n="toolMove">拖动</button>
-          <button type="button" id="toolResetGeo" class="tool-btn" data-i18n="toolResetGeo" hidden>还原图形</button>
-          <button type="button" id="toolPen" class="tool-btn" data-i18n="toolPen">画笔</button>
-          <button type="button" id="toolEraser" class="tool-btn" data-i18n="toolEraser">橡皮</button>
-          <button type="button" id="toolClear" class="tool-btn" data-i18n="toolClear">清空标注</button>
-          <button type="button" id="toolBgFigure" class="tool-btn active" data-i18n="toolBgFigure">示意图</button>
-          <button type="button" id="toolBgPhoto" class="tool-btn" data-i18n="toolBgPhoto" hidden>叠加原图</button>
-          <button type="button" id="toolBgPhotoOnly" class="tool-btn" data-i18n="toolBgPhotoOnly" hidden>只看原图</button>
-        </div>
-        <div class="workbench-stage" id="workbenchStage">
-          <img id="photoLayer" class="photo-layer" alt="" hidden />
-          <div id="figureLayer" class="figure-layer"></div>
-          <canvas id="solidCanvas" class="solid-canvas" hidden></canvas>
-          <canvas id="drawCanvas" class="draw-canvas"></canvas>
-        </div>
-      </div>
-
-      <div id="chatLog" class="chat-log"></div>
-      <div class="subhead-row answer-row">
-        <span class="meta" data-i18n="answerLabel">你的回答</span>
-        <button type="button" id="btnVoiceAnswer" class="btn ghost voice-btn" data-i18n="voiceInput">语音输入</button>
-      </div>
-      <textarea id="answerBox" rows="3"></textarea>
-      <p id="voiceAnswerStatus" class="meta voice-status"></p>
-      <div class="actions">
-        <button type="button" id="btnHint" class="btn ghost" data-i18n="hint">卡住了，提示一下</button>
-        <button type="button" id="btnSubmit" class="btn primary" data-i18n="submit">提交回答</button>
-      </div>
-      <p class="feedback" id="feedback"></p>
-    </section>
-
-    <section class="panel" id="donePanel" hidden>
-      <p class="done-banner" data-i18n="doneBanner">本题已完成 · 下面是反馈建议，以及完整解答</p>
-
-      <!-- 默认不 hidden：只要打开完成页就能看到反馈区（避免旧 JS 缓存导致整块消失） -->
-      <div id="reviewCard" class="review-card">
-        <h2 data-i18n="reviewTitle">做题反馈与建议</h2>
-        <p id="reviewStatus" class="review-status meta" hidden></p>
-        <p id="reviewSummary" class="review-summary">做完后这里会显示针对你解题过程的反馈与建议。</p>
-        <div class="review-cols">
-          <div class="review-block">
-            <h4 data-i18n="reviewStrengths">做得好的地方</h4>
-            <ul id="reviewStrengths">
-              <li>能跟着引导把整道题做完。</li>
-            </ul>
+    <div class="body">
+      <main class="main" id="mainCol">
+        <!-- 主界面 -->
+        <section class="screen active" id="screen-home">
+          <div class="home-center">
+            <img class="home-mascot" src="/static/figma-page1/mascot-home.png" alt="" />
+            <p class="home-greet" data-i18n-html="homeGreet">早上好，<br />今天想学点什么？</p>
+            <div class="home-entries">
+              <div class="home-entry-wrap">
+                <span class="home-entry-label" data-i18n="entrySearch">搜索题目</span>
+                <button type="button" class="home-entry" id="btnEntrySearch" data-screen="search" aria-label="搜索题目">
+                  <img src="/static/figma-page1/icon-camera.svg" alt="" />
+                </button>
+              </div>
+              <div class="home-entry-wrap">
+                <span class="home-entry-label" data-i18n="entryPractice">快速练习</span>
+                <button type="button" class="home-entry" id="btnEntryPractice" data-screen="guide" aria-label="快速练习">
+                  <img src="/static/figma-page1/icon-practice.svg" alt="" />
+                </button>
+              </div>
+            </div>
           </div>
-          <div class="review-block">
-            <h4 data-i18n="reviewImprovements">可以改进</h4>
-            <ul id="reviewImprovements">
-              <li>关键步骤可以先说出用到的性质/定理。</li>
-            </ul>
+        </section>
+
+        <!-- 搜索题目 -->
+        <section class="screen" id="screen-search" hidden>
+          <div class="page-head">
+            <button type="button" class="btn-back" data-back title="返回" aria-label="返回">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6 9 12l6 6"/></svg>
+              <span data-i18n="back">返回</span>
+            </button>
+            <h1 class="page-title" data-i18n="searchTitle">搜索题目</h1>
           </div>
+          <div class="search-top">
+            <label class="upload-card" data-i18n="upload">
+              上传图片
+              <input type="file" id="fileInput" accept="image/*" hidden />
+            </label>
+            <label class="upload-card" data-i18n="takePhoto">
+              拍照
+              <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden />
+            </label>
+            <div class="preview-card" id="dropZone" tabindex="0">
+              <img id="preview" class="preview" alt="" hidden />
+              <p class="drop-hint" id="dropHintText" data-i18n="dropHintShort">拖拽 / 粘贴题目图片到这里</p>
+              <button type="button" id="btnClearImage" class="icon-trash" title="清空" data-i18n-title="clearImage" aria-label="清空图片">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#8796AF" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12"/></svg>
+              </button>
+            </div>
+          </div>
+          <p id="ocrStatus" class="meta ocr-line"></p>
+          <div class="actions search-actions">
+            <button type="button" id="btnOpenCamera" class="linkish" data-i18n="openCamera">打开摄像头</button>
+          </div>
+          <div id="cameraPanel" class="camera-panel" hidden>
+            <video id="cameraVideo" autoplay playsinline></video>
+            <div class="actions">
+              <button type="button" id="btnSnap" class="btn-coral" data-i18n="snap">拍照识别</button>
+              <button type="button" id="btnCloseCamera" class="linkish" data-i18n="closeCamera">关闭摄像头</button>
+            </div>
+          </div>
+
+          <h2 class="section-title" data-i18n="workbenchTitle">画板</h2>
+          <div class="board" id="boardSearch">
+            <div class="board-tabs">
+              <span class="tab active" data-i18n="toolBgFigure">示意图</span>
+              <span class="tab muted" data-i18n="toolBgPhoto">叠加原图</span>
+              <span class="tab muted" data-i18n="toolBgPhotoOnly">只看原图</span>
+            </div>
+            <div class="board-stage" id="workbenchStageSearch">
+              <img id="searchBoardPreview" class="search-board-img" alt="" hidden />
+              <p class="board-placeholder" id="searchBoardHint" data-i18n="boardEmptySearch">上传题目后，几何示意图会出现在这里</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 快速练习 / AI 引导 -->
+        <section class="screen" id="guidePanel" hidden>
+          <div class="page-head">
+            <button type="button" class="btn-back" data-back title="返回" aria-label="返回">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6 9 12l6 6"/></svg>
+              <span data-i18n="back">返回</span>
+            </button>
+            <h1 class="page-title" data-i18n="guideTitle">快速练习</h1>
+          </div>
+          <div class="samples" id="samples"></div>
+          <h2 class="section-title" data-i18n="workbenchTitle">画板</h2>
+          <div class="board">
+            <div class="board-tabs">
+              <button type="button" id="toolBgFigure" class="tab active" data-i18n="toolBgFigure">示意图</button>
+              <button type="button" id="toolBgPhoto" class="tab" data-i18n="toolBgPhoto" hidden>叠加原图</button>
+              <button type="button" id="toolBgPhotoOnly" class="tab" data-i18n="toolBgPhotoOnly" hidden>只看原图</button>
+            </div>
+            <div id="workbench" class="workbench">
+              <div class="workbench-stage board-stage" id="workbenchStage">
+                <img id="photoLayer" class="photo-layer" alt="" hidden />
+                <div id="figureLayer" class="figure-layer"></div>
+                <canvas id="solidCanvas" class="solid-canvas" hidden></canvas>
+                <canvas id="drawCanvas" class="draw-canvas"></canvas>
+                <p id="workbenchEmpty" class="board-placeholder" data-i18n="boardEmpty">选一道题开始后，画板会出现在这里</p>
+              </div>
+            </div>
+            <div class="board-tools">
+              <button type="button" id="toolMove" class="tool-icon active" title="拖动" data-i18n-title="toolMove">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l7 16 2-7 7-2L4 4z"/></svg>
+              </button>
+              <button type="button" id="toolResetGeo" class="tool-icon" title="还原" data-i18n-title="toolResetGeo" hidden>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/></svg>
+              </button>
+              <button type="button" id="toolPen" class="tool-icon" title="画笔" data-i18n-title="toolPen">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4L16.5 3.5z"/></svg>
+              </button>
+              <button type="button" id="toolEraser" class="tool-icon" title="橡皮" data-i18n-title="toolEraser">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 21h10M4.5 13.5l6-6 7 7-4 4H8.5l-4-5z"/></svg>
+              </button>
+              <button type="button" id="toolClear" class="tool-icon" title="清空" data-i18n-title="toolClear">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12"/></svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 完整解答 / 反馈 -->
+        <section class="screen" id="donePanel" hidden>
+          <div class="page-head">
+            <button type="button" class="btn-back" data-back title="返回" aria-label="返回">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6 9 12l6 6"/></svg>
+              <span data-i18n="back">返回</span>
+            </button>
+            <h1 class="page-title" data-i18n="fullSolution">完整解答</h1>
+          </div>
+          <pre id="finalWriteup" class="writeup-light"></pre>
+          <h2 class="section-title" data-i18n="reviewTitleShort">做题反馈</h2>
+          <div id="reviewCard" class="review-panel">
+            <p id="reviewStatus" class="review-status meta" hidden></p>
+            <p id="reviewSummary" class="review-summary">做完后这里会显示针对你解题过程的反馈与建议。</p>
+            <div class="review-cols">
+              <div class="review-block">
+                <h4 data-i18n="reviewStrengths">做得好的地方</h4>
+                <ul id="reviewStrengths"><li>能跟着引导把整道题做完。</li></ul>
+              </div>
+              <div class="review-block">
+                <h4 data-i18n="reviewImprovements">可以改进</h4>
+                <ul id="reviewImprovements"><li>关键步骤可以先说出用到的性质/定理。</li></ul>
+              </div>
+            </div>
+            <div class="review-block review-suggest">
+              <h4 data-i18n="reviewSuggestions">建议与下一步</h4>
+              <ul id="reviewSuggestions"><li>可以再练一道同类题巩固。</li></ul>
+            </div>
+            <div class="actions done-actions">
+              <button type="button" id="btnCopy" class="btn-coral" data-i18n="copy">复制全文（含反馈）</button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- 右侧固定栏 · Page1 -->
+      <aside class="rail" id="rightRail" hidden>
+        <h2 class="rail-title" data-i18n="problemLabel">题目文字</h2>
+        <div class="problem-box">
+          <textarea id="problemText" rows="6"></textarea>
+          <button type="button" id="btnStart" class="btn-coral btn-confirm" data-i18n="confirm">确认</button>
         </div>
-        <div class="review-block review-suggest">
-          <h4 data-i18n="reviewSuggestions">建议与下一步</h4>
-          <ul id="reviewSuggestions">
-            <li>可以再练一道同类题巩固。</li>
-          </ul>
+        <p id="voiceProblemStatus" class="meta voice-status"></p>
+        <p id="startStatus" class="meta"></p>
+
+        <p class="guide-status" id="statusPillText"></p>
+        <div id="chatLog" class="chat-log"></div>
+        <p class="feedback" id="feedback"></p>
+
+        <button type="button" id="btnHint" class="btn-coral btn-hint" data-i18n="hint">卡住了，提示一下</button>
+
+        <div class="answer-bar">
+          <textarea id="answerBox" rows="1" placeholder=""></textarea>
+          <button type="button" id="btnVoiceAnswer" class="icon-btn voice-btn" title="语音" data-i18n-title="voiceInput">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#123873" stroke-width="1.8"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+          </button>
+          <button type="button" id="btnSubmit" class="icon-btn send-btn" title="提交" data-i18n-title="submit">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#8796AF" stroke-width="2"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+          </button>
         </div>
-      </div>
+        <p id="voiceAnswerStatus" class="meta voice-status"></p>
 
-      <h2 data-i18n="fullSolution">完整解答</h2>
-      <pre id="finalWriteup" class="writeup"></pre>
-
-      <div class="actions done-actions">
-        <button type="button" id="btnCopy" class="btn primary" data-i18n="copy">复制全文（含反馈）</button>
-      </div>
-    </section>
-
-    <footer class="foot" data-i18n="footer">
-      由 DeepSeek 提供解题引导 · 每次只推进一步，鼓励你自己思考
-    </footer>
+        <!-- 兼容旧逻辑的隐藏控件 -->
+        <button type="button" id="btnVoiceProblem" class="visually-hidden" data-i18n="voiceInput">语音输入</button>
+        <button type="button" id="btnClearText" class="visually-hidden" data-i18n="clearText">清空文字</button>
+        <p class="done-banner visually-hidden" data-i18n="doneBanner">本题已完成</p>
+      </aside>
+    </div>
   </div>
-  <script src="/static/solid3d.js?v=20260719c"></script>
-  <script src="/static/app.js?v=20260719c"></script>
+
+  <script src="/static/solid3d.js?v=20260719g"></script>
+  <script src="/static/app.js?v=20260719g"></script>
 </body>
 </html>

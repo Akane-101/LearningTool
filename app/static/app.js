@@ -20,8 +20,27 @@ const GEO_H = 280;
 
 const I18N = {
   zh: {
+    brandName: "解三角形",
     title: "AI 带你一步一步解题",
     subtitle: "平面/立体几何 · 拍照看图 · 根据题目生成示意图 · DeepSeek 逐步引导",
+    homeTitle: "首页",
+    searchTitle: "搜索题目",
+    guideTitle: "快速练习",
+    doneTitle: "完整解答",
+    homeGreet: "早上好，<br />今天想学点什么？",
+    entrySearch: "搜索题目",
+    entrySearchDesc: "拍照 / 上传 / 粘贴截图，自动识字与描摹几何图",
+    entryPractice: "快速练习",
+    entryPracticeDesc: "选示例题，AI 逐步引导；支持平面与立体图形",
+    problemEditable: "可编辑",
+    guideMeta: "逐步推进",
+    boardEmpty: "选一道题开始后，画板会出现在这里",
+    boardEmptySearch: "上传题目后，几何示意图会出现在这里",
+    dropHintShort: "拖拽 / 粘贴题目图片到这里",
+    confirm: "确认",
+    reviewTitleShort: "做题反馈",
+    back: "返回",
+    backHome: "回首页",
     step1: "1. 输入题目",
     dropTitle: "把题目图片拖到这里，或按 Ctrl+V 粘贴截图",
     dropHint: "也支持手机拍照、相册选图",
@@ -30,11 +49,11 @@ const I18N = {
     openCamera: "打开摄像头",
     snap: "拍照识别",
     closeCamera: "关闭摄像头",
-    problemLabel: "题目文字（可修改，也可包含你已有的做题过程）",
+    problemLabel: "题目文字",
     problemPlaceholder: "拍照或粘贴图片后这里会自动填入文字；也可以直接打字/粘贴。\n如果你已经写了一部分解题过程，直接贴在这里，AI 会接着你的思路继续。",
-    startGuide: "开始 AI 引导",
-    step2: "2. AI 逐步引导",
-    answerPlaceholder: "写下你的答案或思路…\n如果已经写了部分过程（含 ∵∴=° 等），直接贴在这里，AI 会接着往下引导",
+    startGuide: "确认",
+    step2: "AI 引导",
+    answerPlaceholder: "写下你的答案或思路",
     hint: "卡住了，提示一下",
     hintAsked: "（我卡住了，想要一个提示）",
     hintLoading: "正在想提示…",
@@ -98,6 +117,8 @@ const I18N = {
     clearImage: "清空图片",
     clearText: "清空文字",
     imageCleared: "已清空图片",
+    needStartFirst: "请先开始一道题的 AI 引导",
+    noDoneYet: "还没有完成的解答",
     textCleared: "已清空题目文字",
     voiceInput: "语音输入",
     voiceStop: "停止录音",
@@ -111,8 +132,29 @@ const I18N = {
     answerLabel: "你的回答",
   },
   en: {
+    brandName: "Triangle Guide",
     title: "AI Guides You Step by Step",
     subtitle: "Plane & solid geometry · photo · auto figure · DeepSeek guides",
+    homeTitle: "Home",
+    searchTitle: "Search Problems",
+    guideTitle: "Quick Practice",
+    doneTitle: "Full Solution",
+    homeGreet: "Good morning,<br />What would you like to learn today?",
+    entrySearch: "Search Problems",
+    entrySearchDesc: "Photo / upload / paste a screenshot — OCR and geometry tracing",
+    entryPractice: "Quick Practice",
+    entryPracticeDesc: "Pick a sample; AI guides step by step for plane & solid figures",
+    problemEditable: "Editable",
+    guideMeta: "Step by step",
+    boardEmpty: "Pick a sample to start — the board appears here",
+    boardEmptySearch: "Upload a problem — the diagram appears here",
+    dropHintShort: "Drag / paste a problem image here",
+    confirm: "Confirm",
+    reviewTitleShort: "Feedback",
+    back: "Back",
+    backHome: "Back home",
+    needStartFirst: "Please start AI guidance on a problem first",
+    noDoneYet: "No completed solution yet",
     step1: "1. Enter the Problem",
     dropTitle: "Drag an image here, or press Ctrl+V to paste a screenshot",
     dropHint: "Also supports phone camera and photo gallery",
@@ -121,11 +163,11 @@ const I18N = {
     openCamera: "Open Camera",
     snap: "Snap & Recognize",
     closeCamera: "Close Camera",
-    problemLabel: "Problem text (editable; you can include your existing work)",
+    problemLabel: "Problem text",
     problemPlaceholder: "After photo/paste, text appears here; you can also type directly.\nIf you've already written part of the solution, paste it here and AI will continue from your reasoning.",
-    startGuide: "Start AI Guidance",
-    step2: "2. AI Step-by-Step Guidance",
-    answerPlaceholder: "Write your answer or approach…\nIf you have partial work (with ∵∴=° etc.), paste it here and AI will continue",
+    startGuide: "Confirm",
+    step2: "AI Guidance",
+    answerPlaceholder: "Write your answer or thoughts",
     hint: "I'm stuck, give me a hint",
     hintAsked: "(I'm stuck — please give a hint)",
     hintLoading: "Thinking of a hint…",
@@ -245,6 +287,107 @@ const preview = $("preview");
 const ocrStatus = $("ocrStatus");
 const chatLog = $("chatLog");
 const startStatus = $("startStatus");
+let currentScreen = "home";
+let hasDoneSolution = false;
+let screenHistory = [];
+
+const SCREEN_TITLE = {
+  home: "homeTitle",
+  search: "searchTitle",
+  guide: "guideTitle",
+  done: "doneTitle",
+};
+
+function goBack() {
+  const fallback = {
+    search: "home",
+    guide: "home",
+    done: "guide",
+  };
+  let prev = screenHistory.length ? screenHistory.pop() : (fallback[currentScreen] || "home");
+  if (prev === currentScreen) prev = fallback[currentScreen] || "home";
+  if (prev === "done" && !hasDoneSolution) prev = "guide";
+  if (prev === "guide" && currentScreen === "guide") prev = "home";
+  showScreen(prev, { force: true, replace: true });
+}
+
+function showScreen(name, opts) {
+  const options = opts || {};
+  if (name === "done" && !hasDoneSolution && !options.force) {
+    alert(t("noDoneYet"));
+    name = sessionId ? "guide" : "home";
+  }
+
+  if (!options.replace && currentScreen && currentScreen !== name) {
+    screenHistory.push(currentScreen);
+    if (screenHistory.length > 12) screenHistory.shift();
+  }
+  if (name === "home") screenHistory = [];
+
+  currentScreen = name;
+  const screens = {
+    home: $("screen-home"),
+    search: $("screen-search"),
+    guide: guidePanel,
+    done: donePanel,
+  };
+  Object.entries(screens).forEach(([key, el]) => {
+    if (!el) return;
+    const on = key === name;
+    el.classList.toggle("active", on);
+    el.hidden = !on;
+  });
+
+  const body = document.querySelector(".body");
+  const rail = $("rightRail");
+  if (body) body.classList.toggle("home-mode", name === "home");
+  if (rail) rail.hidden = name === "home";
+
+  const pillText = $("statusPillText");
+  if (pillText) {
+    if (sessionId && (name === "guide" || name === "search" || name === "done")) {
+      pillText.textContent = t("started");
+    } else if (name === "search" && (ocrStatus.textContent || "").trim()) {
+      pillText.textContent = ocrStatus.textContent;
+    } else {
+      pillText.textContent = "";
+    }
+  }
+
+  if (name === "guide") {
+    requestAnimationFrame(() => {
+      try { resizeCanvas(); } catch (_) { /* not ready */ }
+    });
+  }
+}
+
+function syncWorkbenchEmpty() {
+  const empty = $("workbenchEmpty");
+  if (!empty) return;
+  const fig = $("figureLayer");
+  const hasSvg = !!(fig && fig.querySelector("svg"));
+  const solid = $("solidCanvas");
+  const hasSolid = !!(solid && !solid.hidden);
+  const photo = $("photoLayer");
+  const hasPhoto = !!(photo && !photo.hidden && photo.getAttribute("src"));
+  empty.hidden = hasSvg || hasSolid || hasPhoto;
+}
+
+function syncSearchBoardPreview() {
+  const img = $("searchBoardPreview");
+  const hint = $("searchBoardHint");
+  if (!img) return;
+  if (currentImageBase64) {
+    img.src = `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
+    img.hidden = false;
+    if (hint) hint.hidden = true;
+  } else {
+    img.removeAttribute("src");
+    img.hidden = true;
+    if (hint) hint.hidden = false;
+  }
+}
+
 // ===== Language switcher =====
 function applyLang() {
   stopVoiceInput(false);
@@ -255,13 +398,25 @@ function applyLang() {
     el.textContent = val;
     if (input) el.appendChild(input);
   });
+  document.querySelectorAll("[data-i18n-html]").forEach((el) => {
+    el.innerHTML = t(el.getAttribute("data-i18n-html"));
+  });
   problemText.placeholder = t("problemPlaceholder");
   answerBox.placeholder = t("answerPlaceholder");
   document.documentElement.lang = currentLang === "zh" ? "zh-CN" : "en";
   renderSamples();
   btnLangZh.classList.toggle("active", currentLang === "zh");
   btnLangEn.classList.toggle("active", currentLang === "en");
-  if (!busy) btnStart.textContent = t("startGuide");
+  const langBtn = $("btnLangToggle");
+  if (langBtn) {
+    langBtn.classList.toggle("is-zh", currentLang === "zh");
+    langBtn.classList.toggle("is-en", currentLang === "en");
+    langBtn.title = currentLang === "zh" ? "Switch to English" : "切换到中文";
+  }
+  if (!busy) btnStart.textContent = t("confirm");
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    el.title = t(el.getAttribute("data-i18n-title"));
+  });
 }
 
 function renderSamples() {
@@ -273,7 +428,11 @@ function renderSamples() {
     btn.className = "chip";
     btn.textContent = s.title;
     btn.dataset.text = s.text;
-    btn.addEventListener("click", () => { problemText.value = s.text; });
+    btn.addEventListener("click", () => {
+      problemText.value = s.text;
+      container.querySelectorAll(".chip").forEach((c) => c.classList.remove("on"));
+      btn.classList.add("on");
+    });
     container.appendChild(btn);
   });
 }
@@ -457,6 +616,8 @@ async function snapFromCamera() {
 function showPreview(file) {
   const url = URL.createObjectURL(file);
   preview.src = url; preview.hidden = false;
+  const dropHint = $("dropHintText");
+  if (dropHint) dropHint.hidden = true;
   preview.onload = () => URL.revokeObjectURL(url);
 }
 
@@ -653,6 +814,8 @@ function clearCurrentImage() {
   currentVisionFigure = null;
   preview.src = "";
   preview.hidden = true;
+  const dropHint = $("dropHintText");
+  if (dropHint) dropHint.hidden = false;
   ocrStatus.textContent = t("imageCleared");
   ocrStatus.classList.remove("bad");
   if ($("fileInput")) $("fileInput").value = "";
@@ -665,6 +828,8 @@ function clearCurrentImage() {
   if (bgMode === "overlay" || bgMode === "photo") bgMode = "figure";
   syncPhotoToolsVisibility();
   syncBgMode();
+  syncSearchBoardPreview();
+  syncWorkbenchEmpty();
 }
 
 /** 无原图时隐藏「叠加原图 / 只看原图」 */
@@ -706,6 +871,7 @@ async function handleImageFile(file) {
     currentImageMime = null;
   }
   syncPhotoToolsVisibility();
+  syncSearchBoardPreview();
 
   const form = new FormData();
   form.append("file", file, file.name || "problem.png");
@@ -851,6 +1017,7 @@ function showWorkbench(svg, figureData) {
   const wb = $("workbench");
   if (!wb) return;
   wb.hidden = false;
+  syncWorkbenchEmpty();
 
   if (isSolidFigure(latestFigureData)) {
     bgMode = "figure";
@@ -858,6 +1025,7 @@ function showWorkbench(svg, figureData) {
     mountSolidWorkbench(latestFigureData);
     resizeCanvas();
     syncBgMode();
+    syncWorkbenchEmpty();
     return;
   }
 
@@ -874,6 +1042,7 @@ function showWorkbench(svg, figureData) {
   setInteractionMode(drawMode);
   resizeCanvas();
   syncBgMode();
+  syncWorkbenchEmpty();
   if (currentImageBase64) {
     const photo = $("photoLayer");
     photo.onload = () => {
@@ -881,6 +1050,7 @@ function showWorkbench(svg, figureData) {
         initGeoState(latestFigureData);
         renderInteractiveGeo();
       }
+      syncWorkbenchEmpty();
     };
     photo.src = `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
   }
@@ -1374,7 +1544,7 @@ function setInteractionMode(mode) {
   const solid = isSolidFigure(latestFigureData);
   if (moveBtn) {
     moveBtn.classList.toggle("active", mode === "move");
-    moveBtn.textContent = solid ? t("toolRotate") : t("toolMove");
+    moveBtn.title = solid ? t("toolRotate") : t("toolMove");
   }
   if (penBtn) penBtn.classList.toggle("active", mode === "pen");
   if (eraserBtn) eraserBtn.classList.toggle("active", mode === "eraser");
@@ -1538,7 +1708,7 @@ function setBusy(on, label) {
   $("btnSubmit").disabled = on;
   $("btnHint").disabled = on;
   $("btnStart").disabled = on;
-  $("btnStart").textContent = on ? (label || t("thinking")) : t("startGuide");
+  $("btnStart").textContent = on ? (label || t("thinking")) : t("confirm");
 }
 
 async function fetchJson(url, options, timeoutMs) {
@@ -1578,13 +1748,13 @@ async function startAiGuide() {
     }, 90000);
     if (!data.ok) { startStatus.textContent = data.message || t("startFailed"); startStatus.classList.add("bad"); return; }
     sessionId = data.session_id;
+    hasDoneSolution = false;
     if (data.geometry_description) currentGeometryDescription = data.geometry_description;
     if (data.figure_data) currentVisionFigure = data.figure_data;
     chatLog.innerHTML = "";
-    donePanel.hidden = true;
-    guidePanel.hidden = false;
     answerBox.value = "";
-    $("workbench").hidden = true;
+    showScreen("guide", { force: true });
+    syncWorkbenchEmpty();
     addBubble("ai", data.message || t("aiStart"));
     if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
     if (data.figure_svg || data.figure_data) {
@@ -1595,7 +1765,7 @@ async function startAiGuide() {
       showWorkbench(null, null);
       bgMode = "overlay";
       syncBgMode();
-      $("workbench").hidden = false;
+      syncWorkbenchEmpty();
       resizeCanvas();
     }
     startStatus.textContent = data.vision_note
@@ -1661,8 +1831,8 @@ async function sendReply(wantHint) {
 }
 
 function showDone(solution, review) {
-  guidePanel.hidden = true;
-  donePanel.hidden = false;
+  hasDoneSolution = true;
+  showScreen("done", { force: true });
   finalWriteup.textContent = solution || "";
   // 完成页 = 反馈建议 + 完整解答（缺一不可）
   const fallback = review || {
@@ -1710,6 +1880,36 @@ if ($("toolBgPhotoOnly")) {
 }
 
 setupDrawing();
+
+document.querySelectorAll("[data-screen]").forEach((el) => {
+  el.addEventListener("click", (e) => {
+    const name = el.dataset.screen;
+    if (!name) return;
+    if (el.tagName === "BUTTON" || el.classList.contains("home-entry") || el.classList.contains("side-logo")) {
+      e.preventDefault();
+      showScreen(name, { force: true });
+    }
+  });
+});
+
+document.querySelectorAll("[data-back]").forEach((el) => {
+  el.addEventListener("click", (e) => {
+    e.preventDefault();
+    goBack();
+  });
+});
+
+const langToggle = $("btnLangToggle");
+if (langToggle) {
+  langToggle.addEventListener("click", () => {
+    currentLang = currentLang === "zh" ? "en" : "zh";
+    applyLang();
+  });
+}
+
 applyLang();
+showScreen("home", { force: true });
+syncWorkbenchEmpty();
+syncSearchBoardPreview();
 syncPhotoToolsVisibility();
 setInteractionMode("move");
