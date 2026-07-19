@@ -674,7 +674,14 @@ function voiceUi(target, listening, statusText) {
   const status = $(target === "answer" ? "voiceAnswerStatus" : "voiceProblemStatus");
   if (btn) {
     btn.classList.toggle("listening", !!listening);
-    btn.textContent = listening ? t("voiceStop") : t("voiceInput");
+    // 答题区语音按钮用图标切换（麦克风 ↔ 停止方块），不要用文字盖掉 SVG
+    if (btn.id === "btnVoiceAnswer") {
+      const tip = listening ? t("voiceStop") : t("voiceInput");
+      btn.title = tip;
+      btn.setAttribute("aria-label", tip);
+    } else {
+      btn.textContent = listening ? t("voiceStop") : t("voiceInput");
+    }
     btn.disabled = !!voiceBusy && !listening;
   }
   if (status) {
@@ -926,10 +933,36 @@ async function handleImageFile(file) {
   } catch { ocrStatus.textContent = t("netError"); ocrStatus.classList.add("bad"); }
 }
 
+function sanitizeDisplayText(text, limit) {
+  let s = String(text || "").trim();
+  if (!s) return "";
+  // 后端偶发把整段 JSON 原样返回时，尽量抠出 message/hint
+  if (s.startsWith("{") && (s.includes('"message"') || s.includes('"hint"'))) {
+    try {
+      const obj = JSON.parse(s);
+      s = String(obj.hint || obj.message || obj.feedback || "").trim() || s;
+    } catch {
+      const m = s.match(/"(?:message|hint)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (m) {
+        s = m[1].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+      }
+    }
+  }
+  const cot = s.search(
+    /(?:^|\n)\s*(?:Wait[,.\s]|Actually[,.\s]|Let me think|不过等等|让我想想|不对[，,])/i
+  );
+  if (cot >= 12) s = s.slice(0, cot).trim();
+  const max = limit || 800;
+  if (s.length > max) s = s.slice(0, max).trim() + "…";
+  return s;
+}
+
 function addBubble(role, text) {
+  const clean = sanitizeDisplayText(text, role === "hint" ? 400 : 600);
+  if (!clean) return;
   const div = document.createElement("div");
   div.className = "bubble " + role;
-  div.textContent = text;
+  div.textContent = clean;
   chatLog.appendChild(div);
   requestAnimationFrame(() => { chatLog.scrollTop = chatLog.scrollHeight; });
 }
@@ -1019,6 +1052,19 @@ function setWorkbenchHint(solid) {
   hint.textContent = solid ? t("workbenchHintSolid") : t("workbenchHint");
 }
 
+const MOVE_ICON_SVG =
+  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4l7 16 2-7 7-2L4 4z"/></svg>';
+
+function setToolTip(btn, tip) {
+  if (!btn) return;
+  btn.title = tip;
+  btn.setAttribute("aria-label", tip);
+  // 绝不改 textContent，否则会冲掉 SVG 图标
+  if (btn.id === "toolMove" && !btn.querySelector("svg")) {
+    btn.innerHTML = MOVE_ICON_SVG;
+  }
+}
+
 function syncSolidTools(solid) {
   const solidCanvas = $("solidCanvas");
   const fig = $("figureLayer");
@@ -1030,7 +1076,7 @@ function syncSolidTools(solid) {
     if (bgFig) bgFig.hidden = true;
     if (moveBtn) {
       moveBtn.hidden = false;
-      moveBtn.textContent = t("toolRotate");
+      setToolTip(moveBtn, t("toolRotate"));
     }
     ["toolBgPhoto", "toolBgPhotoOnly"].forEach((id) => {
       const el = $(id);
@@ -1040,7 +1086,7 @@ function syncSolidTools(solid) {
     if (bgFig) bgFig.hidden = false;
     if (moveBtn) {
       moveBtn.hidden = false;
-      moveBtn.textContent = t("toolMove");
+      setToolTip(moveBtn, t("toolMove"));
     }
     if (resetBtn) resetBtn.hidden = !(geoBaseline && drawMode === "move");
     syncPhotoToolsVisibility();
@@ -1711,7 +1757,7 @@ function setInteractionMode(mode) {
   const solid = isSolidFigure(latestFigureData);
   if (moveBtn) {
     moveBtn.classList.toggle("active", mode === "move");
-    moveBtn.title = solid ? t("toolRotate") : t("toolMove");
+    setToolTip(moveBtn, solid ? t("toolRotate") : t("toolMove"));
   }
   if (penBtn) penBtn.classList.toggle("active", mode === "pen");
   if (eraserBtn) eraserBtn.classList.toggle("active", mode === "eraser");

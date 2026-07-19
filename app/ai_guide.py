@@ -35,11 +35,14 @@ SYSTEM_PROMPTS = {
 6. 不要直接泄露最终答案，除非学生明确请求完整解答。
 7. **几何题尽量配示意图。** 若题目里已有「根据原题图片识别的图形」，你的 figure 必须严格按该描述还原，不要另画无关图形。
 8. **立体几何题请返回立体 figure**（正方体/长方体/三棱柱/四棱锥/圆柱/圆锥），便于前端生成可旋转立体图。
+9. **message / hint / feedback 必须短**：各不超过 3 句话。只写给学生看的话。
+10. **禁止把内心推理写进 JSON**：不要英文自言自语（Wait / Actually / Let me think）、不要反复纠结条件、不要长篇草稿。想清楚后再输出简短 JSON。
+11. **直接对学生说话（用“你”）**，像当面辅导。禁止教案旁白，例如：「开场」「引导学生回忆…」「让学生先写出…」「提醒学生注意…」。不要交代你准备怎么教，直接问学生或点拨一步。
 
 每次回复必须是合法 JSON（不要 markdown 代码块），格式：
 {
-  "message": "给学生看的主回复",
-  "feedback": "对学生上一条回答的评价；第一步可写开场",
+  "message": "直接对学生说的主回复（用“你”）",
+  "feedback": "对学生上一条回答的短评价；第一步可留空字符串，不要写教案式开场",
   "is_correct": true或false或null,
   "hint": "可选短提示，没有则空字符串",
   "completed": false,
@@ -95,11 +98,14 @@ Teaching principles:
 6. Don't reveal the final answer unless asked for the full solution.
 7. **For geometry, include a figure when helpful.** Match any photo-derived geometry description.
 8. **For solid geometry, return a solid figure** so the UI can render a rotatable 3D sketch.
+9. **Keep message / hint / feedback short** (at most 3 sentences each). Student-facing only.
+10. **Never put internal reasoning into JSON** — no long scratch work, no debating the problem with yourself. Decide first, then output short JSON.
+11. **Speak directly to the student** ("you"). Never lesson-plan narration like "Opening:", "Guide the student to recall…", "Ask the student to…". Don't describe your teaching plan — just ask or nudge.
 
 Each reply must be valid JSON (no markdown), format:
 {
-  "message": "main reply",
-  "feedback": "evaluation of last answer",
+  "message": "main reply spoken to the student",
+  "feedback": "short evaluation of last answer; first turn may be empty — no lesson-plan opening",
   "is_correct": true or false or null,
   "hint": "optional short hint",
   "completed": false,
@@ -158,39 +164,174 @@ def _client() -> OpenAI:
     )
 
 
+# 模型偶尔把内心推理写进 message；在这些标记处截断
+_COT_CUT_RE = re.compile(
+    r"(?is)"
+    r"(?:^|\n)\s*"
+    r"(?:"
+    r"Wait[,.\s]|Actually[,.\s]|Hmm+\b|Hold on\b|"
+    r"Let me (?:think|see|check|recalculate)\b|"
+    r"I (?:need to|think|guess|realize)\b|"
+    r"This (?:is|seems) (?:impossible|wrong|odd)\b|"
+    r"不过等等|让我再|让我想想|不对[，,]|等等[，,]|"
+    r"实际上[，,]|我来算|重新算|仔细看"
+    r")"
+)
+
+
+def _unescape_json_string(raw: str) -> str:
+    try:
+        return json.loads(f'"{raw}"')
+    except Exception:
+        return (
+            raw.replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace('\\"', '"')
+            .replace("\\\\", "\\")
+        )
+
+
+def _recover_json_fields(text: str) -> dict[str, Any]:
+    """JSON 截断/损坏时，尽量抠出 message/hint 等字符串字段。"""
+    out: dict[str, Any] = {}
+    for key in ("message", "feedback", "hint", "final_solution"):
+        m = re.search(
+            rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)',
+            text,
+            re.DOTALL,
+        )
+        if m:
+            out[key] = _unescape_json_string(m.group(1)).strip()
+    m = re.search(r'"completed"\s*:\s*(true|false)', text, re.I)
+    if m:
+        out["completed"] = m.group(1).lower() == "true"
+    m = re.search(r'"is_correct"\s*:\s*(true|false|null)', text, re.I)
+    if m:
+        val = m.group(1).lower()
+        out["is_correct"] = None if val == "null" else (val == "true")
+    return out
+
+
+def _looks_like_raw_json(text: str) -> bool:
+    s = (text or "").lstrip()
+    return s.startswith("{") and ('"message"' in s[:120] or '"hint"' in s[:120])
+
+
+# 教案旁白：不应对学生说
+_META_TEACH_RE = re.compile(
+    r"(?i)"
+    r"(?:"
+    r"^开场[，,:：]|"
+    r"(?:^|[。！？\n])\s*开场[，,:：]|"
+    r"(?:引导|提醒|帮助)学生|"
+    r"让学生(?:先)?(?:回忆|思考|写出|观察|证明|计算)|"
+    r"先(?:引导|让)学生|"
+    r"请学生(?:先)?|"
+    r"\bopening[:：]|"
+    r"guide(?:s|d)? the student|"
+    r"ask(?:s|ed)? the student|"
+    r"have the student|"
+    r"remind the student|"
+    r"encourage the student to"
+    r")"
+)
+
+
+def _scrub_teacher_meta(text: str) -> str:
+    """去掉「开场 / 引导学生…」类教案口吻；整句都是旁白则删掉。"""
+    text = re.sub(r"(?i)^开场[，,:：]\s*", "", text.strip())
+    text = re.sub(r"(?i)^opening[:：]\s*", "", text)
+    if not text:
+        return ""
+    # 按句拆开，丢掉教案旁白句
+    chunks = re.split(r"(?<=[。！？!?])|\n+", text)
+    kept: list[str] = []
+    for chunk in chunks:
+        part = chunk.strip()
+        if not part:
+            continue
+        if _META_TEACH_RE.search(part):
+            continue
+        kept.append(part)
+    return "".join(kept).strip() if kept else ""
+
+
+def _sanitize_student_text(text: Any, *, limit: int = 320) -> str:
+    """去掉 JSON 原文泄漏、内心推理与教案旁白，限制给学生看的长度。"""
+    text = str(text or "").strip()
+    if not text:
+        return ""
+    if _looks_like_raw_json(text):
+        recovered = _recover_json_fields(text)
+        text = (
+            recovered.get("message")
+            or recovered.get("hint")
+            or recovered.get("feedback")
+            or ""
+        ).strip()
+        if not text:
+            return ""
+    text = _scrub_teacher_meta(text)
+    if not text:
+        return ""
+    m = _COT_CUT_RE.search(text)
+    if m and m.start() >= 12:
+        text = text[: m.start()].strip()
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    if len(text) > limit:
+        cut = text[:limit]
+        for sep in ("。", "！", "？", "；", ".", "!", "?", ";", "\n"):
+            i = cut.rfind(sep)
+            if i >= 36:
+                cut = cut[: i + 1]
+                break
+        text = cut.strip()
+    return text
+
+
+def _empty_ai_payload() -> dict[str, Any]:
+    return {
+        "message": "",
+        "feedback": "",
+        "is_correct": None,
+        "hint": "",
+        "completed": False,
+        "final_solution": "",
+        "figure": None,
+        "review": None,
+    }
+
+
 def _extract_json(text: str) -> dict[str, Any]:
     text = (text or "").strip()
     if not text:
-        return {
-            "message": "",
-            "feedback": "",
-            "is_correct": None,
-            "hint": "",
-            "completed": False,
-            "final_solution": "",
-        }
+        return _empty_ai_payload()
     if "```" in text:
         m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
         if m:
             text = m.group(1).strip()
     try:
-        return json.loads(text)
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
     except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                return json.loads(text[start : end + 1])
-            except json.JSONDecodeError:
-                pass
-        return {
-            "message": text,
-            "feedback": "",
-            "is_correct": None,
-            "hint": "",
-            "completed": False,
-            "final_solution": "",
-        }
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            data = json.loads(text[start : end + 1])
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+    recovered = _recover_json_fields(text)
+    if recovered.get("message") or recovered.get("hint") or recovered.get("feedback"):
+        data = _empty_ai_payload()
+        data.update(recovered)
+        return data
+    # 绝不把整段原始输出（含 {"message":...}）直接塞给学生
+    return _empty_ai_payload()
 
 
 def _friendly_api_error(exc: Exception) -> str:
@@ -219,36 +360,59 @@ def _message_text(msg: Any) -> str:
     content = getattr(msg, "content", None) or ""
     if content:
         return str(content)
-    reasoning = getattr(msg, "reasoning_content", None) or ""
-    return str(reasoning)
+    # reasoning_content 多是内心推理，只在能抠出 JSON 字段时才用
+    reasoning = str(getattr(msg, "reasoning_content", None) or "").strip()
+    if reasoning and (_looks_like_raw_json(reasoning) or '"message"' in reasoning):
+        return reasoning
+    return ""
+
+
+def _normalize_ai_payload(data: dict[str, Any], *, fallback_message: str) -> dict[str, Any]:
+    out = _empty_ai_payload()
+    if isinstance(data, dict):
+        out.update(data)
+    out["message"] = _sanitize_student_text(out.get("message"), limit=360)
+    out["feedback"] = _sanitize_student_text(out.get("feedback"), limit=240)
+    out["hint"] = _sanitize_student_text(out.get("hint"), limit=280)
+    # 完整解答允许更长，但仍去掉 CoT / 原始 JSON 壳
+    out["final_solution"] = _sanitize_student_text(out.get("final_solution"), limit=4000)
+    if not out["message"]:
+        out["message"] = fallback_message
+    if "is_correct" not in out:
+        out["is_correct"] = None
+    out["completed"] = bool(out.get("completed"))
+    return out
 
 
 def _call_ai(messages: list[dict[str, Any]]) -> dict[str, Any]:
     client = _client()
+    kwargs: dict[str, Any] = {
+        "model": DEEPSEEK_MODEL,
+        "messages": messages,
+        "temperature": 0.3,
+        "max_tokens": 1200,
+        "response_format": {"type": "json_object"},
+    }
     try:
-        resp = client.chat.completions.create(
-            model=DEEPSEEK_MODEL,
-            messages=messages,
-            temperature=0.3,
-            max_tokens=800,
-        )
+        resp = client.chat.completions.create(**kwargs)
     except APIStatusError as exc:
-        raise RuntimeError(_friendly_api_error(exc)) from exc
+        # 个别账号/模型不支持 json_object 时回退
+        if exc.status_code in (400, 422) and "json" in str(exc).lower():
+            kwargs.pop("response_format", None)
+            try:
+                resp = client.chat.completions.create(**kwargs)
+            except APIStatusError as exc2:
+                raise RuntimeError(_friendly_api_error(exc2)) from exc2
+            except Exception as exc2:
+                raise RuntimeError(_friendly_api_error(exc2)) from exc2
+        else:
+            raise RuntimeError(_friendly_api_error(exc)) from exc
     except Exception as exc:
         raise RuntimeError(_friendly_api_error(exc)) from exc
 
     content = _message_text(resp.choices[0].message)
     data = _extract_json(content)
-    data.setdefault("message", content or "请继续。")
-    data.setdefault("feedback", "")
-    data.setdefault("hint", "")
-    data.setdefault("completed", False)
-    data.setdefault("final_solution", "")
-    data.setdefault("figure", None)
-    data.setdefault("review", None)
-    if "is_correct" not in data:
-        data["is_correct"] = None
-    return data
+    return _normalize_ai_payload(data, fallback_message="请继续往下想一步。")
 
 
 def _as_str_list(value: Any, limit: int = 5) -> list[str]:
@@ -628,16 +792,19 @@ def start_session(
 
     if lang == "en":
         text_part = (
-            f"Here is the problem. Please give only a general direction, not too detailed:\n\n"
+            f"Here is the problem. Give only a general direction, not too detailed:\n\n"
             f"{enriched}\n\n"
-            "Note: if the text already contains the student's partial solution, first identify "
-            "where they got to, then continue from their reasoning — don't make them start over. "
+            "Speak directly to the student with \"you\". Do NOT write lesson-plan lines like "
+            "\"Opening: guide the student to recall…\". First-turn feedback may be empty. "
+            "If the text already contains the student's partial solution, continue from there. "
             "If a geometry description from the photo is included, base your figure on it."
         )
     else:
         text_part = (
             f"题目如下，请只给一个大致思路方向，不要拆太细：\n\n{enriched}\n\n"
-            "注意：如果题目文字里已经包含学生写的部分解答过程，请先识别他做到哪一步，"
+            "请直接对学生说话（用「你」），不要写「开场，先引导学生回忆…」这类教案旁白；"
+            "第一步的 feedback 可以留空。"
+            "如果题目文字里已经包含学生写的部分解答过程，请先识别他做到哪一步，"
             "接着他的思路往下引导，不要让他重头来。"
             "若已有「根据原题图片识别的图形」，figure 必须按该描述画，不要另画无关图形。"
         )
@@ -765,9 +932,12 @@ def reply_session(
     ai = _call_ai(messages)
     if want_hint:
         # 模型常把提示写进 message/feedback，这里兜底保证 hint 有内容
-        hint = str(ai.get("hint") or "").strip()
+        hint = _sanitize_student_text(ai.get("hint"), limit=280)
         if not hint:
-            hint = str(ai.get("message") or ai.get("feedback") or "").strip()
+            hint = _sanitize_student_text(
+                ai.get("message") or ai.get("feedback"),
+                limit=280,
+            )
         if not hint:
             hint = _lang_prefixed(
                 lang,
@@ -776,7 +946,8 @@ def reply_session(
             )
         ai["hint"] = hint
         ai["completed"] = False  # 点提示不应直接判完成
-        if not str(ai.get("message") or "").strip():
+        ai["message"] = _sanitize_student_text(ai.get("message"), limit=200)
+        if not ai["message"]:
             ai["message"] = _lang_prefixed(
                 lang,
                 "看下面的提示，试着自己算一步。",
