@@ -100,7 +100,7 @@ const I18N = {
     defaultFeedback: "请按 AI 的引导写你的第一步。",
     noCamera: "当前浏览器不支持摄像头，请用「拍照」或上传图片。",
     workbenchTitle: "几何画板",
-    workbenchHint: "拖动点/边/虚线 · 可叠原图或只看原图 · 拖动时可还原",
+    workbenchHint: "拖动可平移/缩放（题干已知角保持不变）· 可叠原图 · 可还原",
     workbenchHintSolid: "拖动可旋转查看 · 形状固定不可拖边 · 画笔可标注",
     toolMove: "拖动",
     toolRotate: "旋转",
@@ -214,7 +214,7 @@ const I18N = {
     defaultFeedback: "Follow the AI's guidance and write your first step.",
     noCamera: "Camera not supported by this browser.",
     workbenchTitle: "Geometry Board",
-    workbenchHint: "Drag points/edges · overlay or photo-only · reset while dragging",
+    workbenchHint: "Drag to move/scale (given angles stay fixed) · overlay · reset",
     workbenchHintSolid: "Drag to rotate view · shape is locked · pen for notes",
     toolMove: "Move",
     toolRotate: "Rotate",
@@ -1124,11 +1124,13 @@ function initGeoState(figure) {
     normPts[c] = { x: 0.85, y: 0.78 };
   }
 
+  const angleLabels = f.angle_labels || {};
   geoState = {
     verts,
     normPts,
     pts: {},
-    angle_labels: f.angle_labels || {},
+    angle_labels: angleLabels,
+    lockAngles: hasFixedAngleLabels(angleLabels),
     highlight: f.highlight || null,
     extra_points: (f.extra_points || []).map((ep) => ({ ...ep })),
     segments: f.segments || [],
@@ -1263,6 +1265,61 @@ function anglePair(v, prev, next) {
     if (diff < 0) diff += Math.PI * 2;
   }
   return { a1, a2, diff };
+}
+
+/** 题干给出的数值角（非 ?）→ 拖动时锁定形状，避免角度被改掉 */
+function hasFixedAngleLabels(labels) {
+  return Object.values(labels || {}).some((v) => {
+    const s = String(v || "");
+    return s && !s.includes("?") && /\d/.test(s);
+  });
+}
+
+function triangleCentroid(pts, verts) {
+  const [a, b, c] = verts;
+  return {
+    x: (pts[a].x + pts[b].x + pts[c].x) / 3,
+    y: (pts[a].y + pts[b].y + pts[c].y) / 3,
+  };
+}
+
+/** 以中心做相似变换，把 from 点映射到 to，整体角度不变 */
+function applySimilarMap(origPts, center, from, to) {
+  const v0x = from.x - center.x;
+  const v0y = from.y - center.y;
+  const v1x = to.x - center.x;
+  const v1y = to.y - center.y;
+  const len0 = Math.hypot(v0x, v0y);
+  if (len0 < 1e-6) return null;
+  const len1 = Math.hypot(v1x, v1y);
+  const scale = Math.max(0.25, Math.min(4, len1 / len0));
+  const ang0 = Math.atan2(v0y, v0x);
+  const ang1 = Math.atan2(v1y, v1x);
+  const da = ang1 - ang0;
+  const cos = Math.cos(da);
+  const sin = Math.sin(da);
+  const next = {};
+  for (const name of Object.keys(origPts)) {
+    const p = origPts[name];
+    if (!p) continue;
+    const rx = p.x - center.x;
+    const ry = p.y - center.y;
+    next[name] = clampPt({
+      x: center.x + (rx * cos - ry * sin) * scale,
+      y: center.y + (rx * sin + ry * cos) * scale,
+    });
+  }
+  return next;
+}
+
+function translateAllPoints(origPts, dx, dy) {
+  const next = {};
+  for (const name of Object.keys(origPts)) {
+    const p = origPts[name];
+    if (!p) continue;
+    next[name] = clampPt({ x: p.x + dx, y: p.y + dy });
+  }
+  return next;
 }
 
 function renderInteractiveGeo() {
@@ -1469,6 +1526,37 @@ function setupGeoDrag() {
     if (!p) return;
     const dx = p.x - geoDrag.start.x;
     const dy = p.y - geoDrag.start.y;
+
+    // 题干有固定角度时：只做整体平移/旋转/缩放，不改角度
+    if (geoState.lockAngles && !(geoDrag.type === "vertex" && geoDrag.isExtra)) {
+      if (geoDrag.type === "vertex" && geoDrag.orig[geoDrag.name]) {
+        const center = triangleCentroid(geoDrag.orig, geoState.verts);
+        const target = clampPt({
+          x: geoDrag.orig[geoDrag.name].x + dx,
+          y: geoDrag.orig[geoDrag.name].y + dy,
+        });
+        const mapped = applySimilarMap(
+          geoDrag.orig,
+          center,
+          geoDrag.orig[geoDrag.name],
+          target
+        );
+        if (mapped) geoState.pts = mapped;
+      } else if (geoDrag.type === "edge") {
+        geoState.pts = translateAllPoints(geoDrag.orig, dx, dy);
+      }
+      // 辅助点 ratio 不变，按新顶点重算位置
+      if (geoDrag.extraSnap) {
+        geoState.extra_points = geoDrag.extraSnap.map((ep) => ({ ...ep }));
+      }
+      recomputeExtraPoints();
+      syncNormFromPts();
+      renderInteractiveGeo();
+      layer.classList.add("dragging");
+      e.preventDefault();
+      return;
+    }
+
     if (geoDrag.type === "vertex") {
       const ep = findExtraPoint(geoDrag.name);
       if (ep && geoDrag.isExtra) {
