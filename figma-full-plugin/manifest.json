@@ -1,0 +1,11 @@
+{
+  "name": "Triangle Guide Full (Hi-Fi + Splash)",
+  "id": "triangle-guide-full-hifi-splash",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["none"]
+  }
+}

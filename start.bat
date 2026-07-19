@@ -1,8 +1,9 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
+title 解三角形 - 启动中
 
-echo [1/3] 检查虚拟环境...
+echo [1/4] 检查虚拟环境...
 if not exist ".venv\Scripts\python.exe" (
   echo 正在创建 .venv ...
   py -3 -m venv .venv 2>nul || python -m venv .venv
@@ -13,7 +14,7 @@ if not exist ".venv\Scripts\python.exe" (
   )
 )
 
-echo [2/3] 安装依赖（首次可能较慢）...
+echo [2/4] 安装依赖（首次可能较慢，请稍候）...
 ".venv\Scripts\python.exe" -m pip install -q -r requirements.txt
 if errorlevel 1 (
   echo 依赖安装失败
@@ -31,9 +32,35 @@ if not exist ".env" (
   exit /b 0
 )
 
-echo [3/3] 启动服务 http://127.0.0.1:8001
-echo 浏览器打开上述地址；关闭本窗口即停止服务
+echo [3/4] 启动服务 http://127.0.0.1:8001
+echo 请保持本黑窗口开着；关掉窗口服务就会停止
 echo.
+
+REM 先后台启动 uvicorn，等端口就绪后再打开浏览器（避免“打不开”的错觉）
+start "triangle-guide-server" /MIN ".venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+
+echo [4/4] 等待服务就绪...
+set /a _tries=0
+:wait_loop
+set /a _tries+=1
+powershell -NoProfile -Command "try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8001/api/health' -UseBasicParsing -TimeoutSec 1; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+if %errorlevel%==0 goto ready
+if %_tries% geq 40 (
+  echo.
+  echo 启动超时。请看是否弹出了名为 triangle-guide-server 的窗口，里面是否有报错。
+  echo 也可手动运行：
+  echo   .venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+  pause
+  exit /b 1
+)
+timeout /t 1 /nobreak >nul
+goto wait_loop
+
+:ready
+echo 服务已就绪，正在打开浏览器...
 start "" "http://127.0.0.1:8001"
-".venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+echo.
+echo 已启动：http://127.0.0.1:8001
+echo 最小化窗口 triangle-guide-server 里是服务进程，不要关掉。
+echo 本窗口可关闭；若要停止服务，关掉 triangle-guide-server 窗口即可。
 pause

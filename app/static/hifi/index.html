@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>解三角形 · 高保真 UI（基于 Figma）</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #eef1f6;
+      --white: #ffffff;
+      --ink: #0f172a;
+      --muted: #8796af;
+      --line: #dee4ee;
+      --soft: #f7f9fb;
+      --soft-blue: #e1efff;
+      --navy: #123873;
+      --orange: #f15024;
+      --orange-soft: #fff1ec;
+      --ok: #1f7a4c;
+      --hint: #9a5b12;
+      --hint-bg: #fff8eb;
+      --shadow: 0 12px 40px rgba(18, 56, 115, 0.08);
+      --radius: 20px;
+      --radius-sm: 12px;
+      --sidebar: 72px;
+      --font: "Source Sans 3", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at 0% 0%, #dfe9f8 0%, transparent 45%),
+        radial-gradient(ellipse at 100% 0%, #ffe8df 0%, transparent 40%),
+        var(--bg);
+    }
+
+    /* —— Studio chrome —— */
+    .studio-bar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.7rem 1.25rem;
+      background: rgba(15, 23, 42, 0.92);
+      color: #fff;
+      backdrop-filter: blur(8px);
+    }
+    .studio-bar h1 {
+      margin: 0;
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+    .studio-bar p {
+      margin: 0.15rem 0 0;
+      font-size: 0.72rem;
+      opacity: 0.7;
+    }
+    .screen-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .screen-tabs button {
+      border: 1px solid rgba(255,255,255,0.22);
+      background: transparent;
+      color: #fff;
+      font: inherit;
+      font-size: 0.75rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .screen-tabs button.active {
+      background: var(--orange);
+      border-color: var(--orange);
+    }
+    .screen-tabs button.replay {
+      border-color: rgba(241, 80, 36, 0.55);
+      color: #ffd4c8;
+    }
+
+    /* —— Splash / opening —— */
+    .splash {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(ellipse at 30% 20%, #dfe9f8 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 70%, #ffe8df 0%, transparent 45%),
+        #f4f6fb;
+      transition: opacity 0.55s ease, visibility 0.55s ease;
+    }
+    .splash.is-done {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .splash-inner {
+      position: relative;
+      width: min(360px, 78vw);
+      text-align: center;
+    }
+    .splash-logo-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      margin: 0 auto;
+      transform: scale(0.55);
+      opacity: 0;
+      animation: splash-pop 0.85s cubic-bezier(0.22, 1.35, 0.36, 1) 0.1s forwards;
+    }
+    .splash-logo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      filter: drop-shadow(0 18px 36px rgba(18, 56, 115, 0.18));
+      animation: splash-float 2.4s ease-in-out 0.9s infinite;
+    }
+    .splash-orbit {
+      position: absolute;
+      inset: 6%;
+      pointer-events: none;
+    }
+    .splash-orbit span {
+      position: absolute;
+      font-weight: 700;
+      opacity: 0;
+      animation: splash-symbol 0.55s ease forwards;
+    }
+    .splash-orbit .s1 {
+      left: 4%; top: 12%;
+      color: #f47aa8;
+      font-size: 1.6rem;
+      animation-delay: 0.45s;
+    }
+    .splash-orbit .s2 {
+      left: 46%; top: 0;
+      color: #f5c542;
+      font-size: 1.75rem;
+      animation-delay: 0.55s;
+    }
+    .splash-orbit .s3 {
+      right: 2%; top: 14%;
+      color: #6eb6ff;
+      font-size: 1.65rem;
+      animation-delay: 0.65s;
+    }
+    .splash-brand {
+      margin-top: 0.35rem;
+      opacity: 0;
+      transform: translateY(12px);
+      animation: splash-rise 0.55s ease 0.75s forwards;
+    }
+    .splash-brand h2 {
+      margin: 0;
+      font-size: 1.55rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--navy);
+    }
+    .splash-brand p {
+      margin: 0.35rem 0 0;
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+    .splash-bar {
+      width: 120px;
+      height: 4px;
+      margin: 1.1rem auto 0;
+      border-radius: 999px;
+      background: #e2e8f2;
+      overflow: hidden;
+      opacity: 0;
+      animation: splash-rise 0.4s ease 0.9s forwards;
+    }
+    .splash-bar i {
+      display: block;
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--navy), var(--orange));
+      animation: splash-load 1.35s ease 1s forwards;
+    }
+    .splash-skip {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.85);
+      color: var(--muted);
+      font: inherit;
+      font-size: 0.78rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .splash-skip:hover { color: var(--navy); border-color: #c7d4ea; }
+
+    @keyframes splash-pop {
+      0% { transform: scale(0.45); opacity: 0; }
+      70% { transform: scale(1.06); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes splash-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+    @keyframes splash-symbol {
+      from { opacity: 0; transform: translateY(10px) scale(0.7); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes splash-rise {
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes splash-load {
+      to { width: 100%; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .splash-logo-wrap,
+      .splash-logo,
+      .splash-orbit span,
+      .splash-brand,
+      .splash-bar,
+      .splash-bar i {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+      }
+      .splash-bar i { width: 100%; }
+      .splash { transition: none; }
+    }
+
+    .stage-wrap {
+      padding: 1.5rem 1.25rem 3rem;
+      display: flex;
+      justify-content: center;
+    }
+
+    /* —— Device —— */
+    .device {
+      width: min(1180px, 100%);
+      height: min(720px, calc(100vh - 120px));
+      min-height: 560px;
+      background: var(--white);
+      border-radius: 28px;
+      box-shadow: var(--shadow), 0 0 0 1px rgba(18, 56, 115, 0.06);
+      display: none;
+      overflow: hidden;
+      grid-template-columns: var(--sidebar) 1fr;
+    }
+    .device.active { display: grid; }
+
+    /* Sidebar */
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: var(--white);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.1rem 0.6rem 1rem;
+      gap: 0.55rem;
+    }
+    .logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: transparent;
+      display: grid;
+      place-items: center;
+      margin-bottom: 0.45rem;
+      overflow: visible;
+      padding: 0;
+      border: none;
+    }
+    .logo img {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      display: block;
+      filter: drop-shadow(0 2px 4px rgba(18, 56, 115, 0.12));
+    }
+    .nav-btn {
+      width: 42px;
+      height: 42px;
+      border: none;
+      border-radius: 12px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: 0.15s ease;
+    }
+    .nav-btn:hover { background: var(--soft); color: var(--navy); }
+    .nav-btn.active {
+      background: var(--soft-blue);
+      color: var(--navy);
+    }
+    .nav-btn svg { width: 20px; height: 20px; }
+    .sidebar .spacer { flex: 1; }
+    .avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--soft);
+      border: 2px solid var(--line);
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--navy);
+    }
+    .avatar .badge {
+      position: absolute;
+      right: -2px;
+      bottom: -2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--orange);
+      border: 2px solid #fff;
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: var(--soft);
+    }
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.4rem 0.6rem;
+      gap: 1rem;
+    }
+    .top h2 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .lang {
+      display: flex;
+      gap: 0.3rem;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.2rem;
+    }
+    .lang button {
+      border: none;
+      background: transparent;
+      font: inherit;
+      font-size: 0.78rem;
+      padding: 0.3rem 0.65rem;
+      border-radius: 8px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .lang button.on {
+      background: var(--navy);
+      color: #fff;
+    }
+
+    .content { flex: 1; min-height: 0; padding: 0.4rem 1.4rem 1.2rem; }
+
+    /* —— Home —— */
+    .home {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2rem;
+      text-align: center;
+    }
+    .home .greet {
+      font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+      color: var(--ink);
+      max-width: 16em;
+    }
+    .home .greet span { color: var(--navy); }
+    .entry-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.1rem;
+      width: min(720px, 100%);
+    }
+    .entry {
+      border: 1px solid var(--line);
+      background: var(--white);
+      border-radius: var(--radius);
+      padding: 1.6rem 1.4rem;
+      text-align: left;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s;
+      box-shadow: 0 4px 16px rgba(18, 56, 115, 0.04);
+    }
+    .entry:hover {
+      transform: translateY(-2px);
+      border-color: #c7d4ea;
+      box-shadow: var(--shadow);
+    }
+    .entry .ico {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: var(--soft-blue);
+      color: var(--navy);
+      display: grid;
+      place-items: center;
+      margin-bottom: 1rem;
+    }
+    .entry .ico svg { width: 26px; height: 26px; }
+    .entry h3 {
+      margin: 0 0 0.35rem;
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+    .entry p {
+      margin: 0;
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    /* —— Split workspace —— */
+    .split {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 0.9rem;
+      min-height: 0;
+    }
+    @media (max-width: 900px) {
+      .device { grid-template-columns: 1fr; height: auto; min-height: 0; }
+      .sidebar { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--line); padding: 0.6rem; }
+      .sidebar .spacer { display: none; }
+      .split { grid-template-columns: 1fr; }
+      .entry-grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .panel-h {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--line);
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+    .panel-h .meta { font-size: 0.75rem; font-weight: 400; color: var(--muted); }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid var(--line);
+      background: var(--soft);
+    }
+    .tool {
+      border: 1px solid var(--line);
+      background: var(--white);
+      color: var(--ink);
+      font: inherit;
+      font-size: 0.75rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .tool.on {
+      background: var(--navy);
+      border-color: var(--navy);
+      color: #fff;
+    }
+
+    .canvas {
+      flex: 1;
+      margin: 0.75rem;
+      border-radius: 14px;
+      border: 1px dashed #c5d0e0;
+      background:
+        linear-gradient(180deg, #fbfdff, #f3f6fb),
+        repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(18,56,115,0.04) 24px),
+        repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(18,56,115,0.04) 24px);
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 240px;
+      overflow: hidden;
+    }
+    .canvas .photo {
+      position: absolute;
+      inset: 18px;
+      border-radius: 10px;
+      background: #d9e2ef;
+      opacity: 0.35;
+      border: 1px dashed var(--muted);
+    }
+    .canvas svg.fig { width: min(280px, 70%); height: auto; z-index: 1; filter: drop-shadow(0 8px 16px rgba(18,56,115,0.1)); }
+    .canvas.solid .cube {
+      width: 120px;
+      height: 120px;
+      border: 2px solid var(--navy);
+      background: linear-gradient(145deg, rgba(225,239,255,0.9), rgba(255,255,255,0.5));
+      transform: rotateX(18deg) rotateY(-28deg);
+      box-shadow: 8px 12px 0 rgba(18,56,115,0.08);
+    }
+
+    .upload-strip {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--line);
+      background: var(--soft);
+    }
+    .thumb {
+      width: 64px;
+      height: 48px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #c5d4ea, #e8eef8);
+      border: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+    .upload-strip .info { flex: 1; min-width: 0; }
+    .upload-strip .info strong { display: block; font-size: 0.85rem; }
+    .upload-strip .info span { font-size: 0.75rem; color: var(--muted); }
+    .ghost-btn {
+      border: 1px solid var(--line);
+      background: var(--white);
+      border-radius: 8px;
+      padding: 0.35rem 0.7rem;
+      font: inherit;
+      font-size: 0.75rem;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      padding: 0 0 0.75rem;
+    }
+    .chip {
+      border: 1px solid var(--line);
+      background: var(--white);
+      color: var(--muted);
+      font: inherit;
+      font-size: 0.78rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .chip.on {
+      background: var(--soft-blue);
+      border-color: #b7d0f0;
+      color: var(--navy);
+      font-weight: 600;
+    }
+
+    .problem-box {
+      margin: 0.75rem;
+      padding: 0.9rem 1rem;
+      border-radius: 12px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      font-size: 0.88rem;
+      line-height: 1.55;
+      color: var(--ink);
+      flex: 1;
+      overflow: auto;
+    }
+
+    .chat {
+      flex: 1;
+      overflow: auto;
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .bubble {
+      max-width: 92%;
+      padding: 0.7rem 0.85rem;
+      border-radius: 14px;
+      font-size: 0.86rem;
+      line-height: 1.5;
+    }
+    .bubble.ai {
+      align-self: flex-start;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-bottom-left-radius: 4px;
+    }
+    .bubble.me {
+      align-self: flex-end;
+      background: var(--navy);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble.hint {
+      align-self: flex-start;
+      background: var(--hint-bg);
+      border: 1px dashed #e0b56a;
+      color: #6b4510;
+    }
+    .bubble .who {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+      opacity: 0.7;
+    }
+
+    .composer {
+      border-top: 1px solid var(--line);
+      padding: 0.75rem;
+      background: var(--white);
+    }
+    .composer textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.7rem 0.85rem;
+      font: inherit;
+      font-size: 0.86rem;
+      resize: none;
+      min-height: 64px;
+      background: var(--soft);
+      color: var(--ink);
+    }
+    .composer textarea:focus {
+      outline: 2px solid rgba(18, 56, 115, 0.2);
+      border-color: var(--navy);
+      background: #fff;
+    }
+    .composer .row {
+      display: flex;
+      gap: 0.45rem;
+      margin-top: 0.55rem;
+      align-items: center;
+    }
+    .btn {
+      border: none;
+      font: inherit;
+      font-size: 0.86rem;
+      font-weight: 600;
+      padding: 0.55rem 1rem;
+      border-radius: 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+    }
+    .btn.primary {
+      background: var(--orange);
+      color: #fff;
+      box-shadow: 0 6px 16px rgba(241, 80, 36, 0.28);
+    }
+    .btn.primary:hover { filter: brightness(1.05); }
+    .btn.secondary {
+      background: var(--white);
+      color: var(--navy);
+      border: 1px solid var(--line);
+    }
+    .btn.navy {
+      background: var(--navy);
+      color: #fff;
+    }
+    .btn.ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--line);
+    }
+    .feedback {
+      margin: 0.45rem 0 0;
+      font-size: 0.8rem;
+      color: var(--ok);
+      font-weight: 500;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.25rem 0.65rem;
+    }
+    .status-pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+
+    /* Done */
+    .done-view {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    .writeup {
+      flex: 1;
+      background: #0f1c33;
+      color: #d7e0ef;
+      border-radius: var(--radius);
+      padding: 1.25rem 1.4rem;
+      font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      font-size: 0.86rem;
+      line-height: 1.65;
+      overflow: auto;
+      border: 1px solid #1e3358;
+    }
+    .writeup strong { color: #fff; }
+
+    .foot-note {
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--muted);
+      padding: 0.25rem 0 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="splash" id="splash" role="dialog" aria-label="开场动画">
+    <button type="button" class="splash-skip" id="splashSkip">跳过</button>
+    <div class="splash-inner">
+      <div class="splash-logo-wrap">
+        <div class="splash-orbit" aria-hidden="true">
+          <span class="s1">+</span>
+          <span class="s2">÷</span>
+          <span class="s3">√</span>
+        </div>
+        <img class="splash-logo" src="/static/hifi/assets/app-logo.png" alt="App Logo" width="360" height="360" />
+      </div>
+      <div class="splash-brand">
+        <h2>解三角形</h2>
+        <p>AI 带你一步一步解题</p>
+      </div>
+      <div class="splash-bar" aria-hidden="true"><i></i></div>
+    </div>
+  </div>
+
+  <div class="studio-bar">
+    <div>
+      <h1>解三角形 · 高保真 UI</h1>
+      <p>开场动画使用你 Figma 里的 App Logo · 独立预览，未改原文件</p>
+    </div>
+    <div class="screen-tabs" id="tabs">
+      <button type="button" class="replay" id="replayIntro">重播开场</button>
+      <button type="button" data-screen="home" class="active">01 首页</button>
+      <button type="button" data-screen="search">02 搜索题目</button>
+      <button type="button" data-screen="guide">03 AI 引导</button>
+      <button type="button" data-screen="solid">04 立体题</button>
+      <button type="button" data-screen="done">05 完整解答</button>
+    </div>
+  </div>
+
+  <div class="stage-wrap">
+    <!-- HOME -->
+    <section class="device active" id="screen-home" aria-label="首页">
+      <aside class="sidebar">
+        <div class="logo"><img src="/static/hifi/assets/app-logo.png" alt="logo" /></div>
+        <button class="nav-btn active" title="首页" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/></svg>
+        </button>
+        <button class="nav-btn" title="练习" type="button" data-go="guide">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v5h5"/></svg>
+        </button>
+        <button class="nav-btn" title="解答" type="button" data-go="done">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+        </button>
+        <div class="spacer"></div>
+        <div class="avatar">学<span class="badge"></span></div>
+      </aside>
+      <div class="main">
+        <div class="top">
+          <h2 style="visibility:hidden">首页</h2>
+          <div class="lang"><button type="button" class="on">中文</button><button type="button">EN</button></div>
+        </div>
+        <div class="content">
+          <div class="home">
+            <div class="greet">早上好，<br /><span>今天想学点什么？</span></div>
+            <div class="entry-grid">
+              <button type="button" class="entry" data-go="search">
+                <div class="ico">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h3l2-3h6l2 3h3v12H4V7z"/><circle cx="12" cy="13" r="3.5"/></svg>
+                </div>
+                <h3>搜索题目</h3>
+                <p>拍照 / 上传 / 粘贴截图，自动识字与描摹几何图</p>
+              </button>
+              <button type="button" class="entry" data-go="guide">
+                <div class="ico">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 4h8v4H8zM6 8h12v12H6z"/><path d="M9 12h6M9 16h4"/></svg>
+                </div>
+                <h3>快速练习</h3>
+                <p>选示例题，AI 逐步引导；支持平面与立体图形</p>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEARCH -->
+    <section class="device" id="screen-search" aria-label="搜索题目">
+      <aside class="sidebar">
+        <div class="logo"><img src="/static/hifi/assets/app-logo.png" alt="logo" /></div>
+        <button class="nav-btn" data-go="home" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/></svg></button>
+        <button class="nav-btn active" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h3l2-3h6l2 3h3v12H4V7z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+        <button class="nav-btn" data-go="done" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></button>
+        <div class="spacer"></div>
+        <div class="avatar">学<span class="badge"></span></div>
+      </aside>
+      <div class="main">
+        <div class="top">
+          <h2>搜索题目</h2>
+          <span class="status-pill"><span class="dot"></span>已识别几何结构</span>
+        </div>
+        <div class="content">
+          <div class="split">
+            <div class="panel">
+              <div class="upload-strip">
+                <div class="thumb"></div>
+                <div class="info">
+                  <strong>题目照片</strong>
+                  <span>可叠加原图对齐 · 支持清空重拍</span>
+                </div>
+                <button type="button" class="ghost-btn">清空</button>
+                <button type="button" class="ghost-btn">重拍</button>
+              </div>
+              <div class="panel-h">画板 <span class="meta">平面</span></div>
+              <div class="toolbar">
+                <button type="button" class="tool on">拖动</button>
+                <button type="button" class="tool">还原图形</button>
+                <button type="button" class="tool">画笔</button>
+                <button type="button" class="tool">橡皮</button>
+                <button type="button" class="tool">清空标注</button>
+                <button type="button" class="tool on">示意图</button>
+                <button type="button" class="tool">叠加原图</button>
+                <button type="button" class="tool">只看原图</button>
+              </div>
+              <div class="canvas">
+                <div class="photo"></div>
+                <svg class="fig" viewBox="0 0 280 220" xmlns="http://www.w3.org/2000/svg">
+                  <polygon points="140,28 250,190 30,190" fill="#e8f0fa" stroke="#123873" stroke-width="2.5"/>
+                  <line x1="85" y1="110" x2="195" y2="110" stroke="#f15024" stroke-width="2" stroke-dasharray="6 4"/>
+                  <circle cx="140" cy="28" r="4" fill="#123873"/><text x="148" y="26" font-size="14" fill="#123873" font-family="Source Sans 3">A</text>
+                  <circle cx="250" cy="190" r="4" fill="#123873"/><text x="256" y="206" font-size="14" fill="#123873" font-family="Source Sans 3">C</text>
+                  <circle cx="30" cy="190" r="4" fill="#123873"/><text x="12" y="206" font-size="14" fill="#123873" font-family="Source Sans 3">B</text>
+                  <circle cx="85" cy="110" r="3.5" fill="#f15024"/><text x="68" y="104" font-size="13" fill="#f15024" font-family="Source Sans 3">D</text>
+                  <circle cx="195" cy="110" r="3.5" fill="#f15024"/><text x="200" y="104" font-size="13" fill="#f15024" font-family="Source Sans 3">E</text>
+                  <path d="M140 28 L152 48" stroke="#123873" fill="none"/><text x="154" y="52" font-size="12" fill="#8796af">40°</text>
+                </svg>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-h">题目文字 <span class="meta">可编辑</span></div>
+              <div class="problem-box">
+                如图，在△ABC中，D、E分别是AB、AC上的点，DE∥BC，∠ADE=70°，∠A=40°，求∠C的度数。
+              </div>
+              <div class="composer">
+                <div class="row">
+                  <button type="button" class="btn ghost">语音输入</button>
+                  <button type="button" class="btn secondary" style="margin-left:auto">打开摄像头</button>
+                  <button type="button" class="btn primary" data-go="guide">开始 AI 引导</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GUIDE -->
+    <section class="device" id="screen-guide" aria-label="AI 引导">
+      <aside class="sidebar">
+        <div class="logo"><img src="/static/hifi/assets/app-logo.png" alt="logo" /></div>
+        <button class="nav-btn" data-go="home" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/></svg></button>
+        <button class="nav-btn active" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 4h8v4H8zM6 8h12v12H6z"/><path d="M9 12h6M9 16h4"/></svg></button>
+        <button class="nav-btn" data-go="done" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></button>
+        <div class="spacer"></div>
+        <div class="avatar">学<span class="badge"></span></div>
+      </aside>
+      <div class="main">
+        <div class="top">
+          <h2>快速练习</h2>
+          <span class="status-pill"><span class="dot"></span>已开始引导，请在下方按步骤作答</span>
+        </div>
+        <div class="content" style="display:flex;flex-direction:column;min-height:0;height:100%">
+          <div class="chips">
+            <button type="button" class="chip on">2024·等边三角形+平行线</button>
+            <button type="button" class="chip">2022·平行线求角度</button>
+            <button type="button" class="chip">2023·三角形外角性质</button>
+            <button type="button" class="chip">立体·正方体表面积</button>
+          </div>
+          <div class="split" style="flex:1">
+            <div class="panel">
+              <div class="panel-h">画板 <span class="meta">示意图 · 可叠原图</span></div>
+              <div class="toolbar">
+                <button type="button" class="tool on">拖动</button>
+                <button type="button" class="tool">画笔</button>
+                <button type="button" class="tool">橡皮</button>
+                <button type="button" class="tool">清空标注</button>
+                <button type="button" class="tool on">示意图</button>
+                <button type="button" class="tool">叠加原图</button>
+                <button type="button" class="tool">只看原图</button>
+              </div>
+              <div class="canvas">
+                <svg class="fig" viewBox="0 0 280 220" xmlns="http://www.w3.org/2000/svg">
+                  <polygon points="140,28 250,190 30,190" fill="#e8f0fa" stroke="#123873" stroke-width="2.5"/>
+                  <line x1="85" y1="110" x2="195" y2="110" stroke="#f15024" stroke-width="2" stroke-dasharray="6 4"/>
+                  <circle cx="140" cy="28" r="4" fill="#123873"/><text x="148" y="26" font-size="14" fill="#123873" font-family="Source Sans 3">A</text>
+                  <circle cx="250" cy="190" r="4" fill="#123873"/><text x="256" y="206" font-size="14" fill="#123873" font-family="Source Sans 3">C</text>
+                  <circle cx="30" cy="190" r="4" fill="#123873"/><text x="12" y="206" font-size="14" fill="#123873" font-family="Source Sans 3">B</text>
+                  <text x="198" y="150" font-size="13" fill="#f15024" font-family="Source Sans 3">70°</text>
+                </svg>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-h">AI 引导 <span class="meta">逐步推进</span></div>
+              <div class="chat">
+                <div class="bubble ai"><span class="who">AI</span>先看看已知条件：DE∥BC，∠ADE=70°，∠A=40°。你打算怎么利用平行线来找∠C？</div>
+                <div class="bubble me"><span class="who" style="opacity:.85">你</span>同位角相等？</div>
+                <div class="bubble hint"><span class="who">提示</span>平行线会产生同位角、内错角或同旁内角，想想哪个和∠C有关？</div>
+                <div class="bubble ai"><span class="who">AI</span>方向对。再想一步：∠ADE 与哪个角是同位角？</div>
+              </div>
+              <div class="composer">
+                <textarea placeholder="写下你的答案或思路"></textarea>
+                <div class="row">
+                  <button type="button" class="btn ghost">语音输入</button>
+                  <button type="button" class="btn secondary">卡住了，提示一下</button>
+                  <button type="button" class="btn primary" style="margin-left:auto">确认</button>
+                </div>
+                <p class="feedback">反馈：思路正确，继续往下推。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SOLID -->
+    <section class="device" id="screen-solid" aria-label="立体题">
+      <aside class="sidebar">
+        <div class="logo"><img src="/static/hifi/assets/app-logo.png" alt="logo" /></div>
+        <button class="nav-btn" data-go="home" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/></svg></button>
+        <button class="nav-btn active" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 4h8v4H8zM6 8h12v12H6z"/><path d="M9 12h6M9 16h4"/></svg></button>
+        <div class="spacer"></div>
+        <div class="avatar">学<span class="badge"></span></div>
+      </aside>
+      <div class="main">
+        <div class="top">
+          <h2>立体 · 正方体表面积</h2>
+          <span class="status-pill"><span class="dot"></span>3D 旋转模式</span>
+        </div>
+        <div class="content">
+          <div class="split">
+            <div class="panel">
+              <div class="panel-h">画板 <span class="meta">立体 · 形状锁定</span></div>
+              <div class="toolbar">
+                <button type="button" class="tool on">旋转</button>
+                <button type="button" class="tool">画笔</button>
+                <button type="button" class="tool">橡皮</button>
+                <button type="button" class="tool">清空标注</button>
+              </div>
+              <div class="canvas solid" style="perspective: 480px">
+                <div class="cube"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-h">AI 引导</div>
+              <div class="chat">
+                <div class="bubble ai"><span class="who">AI</span>这是正方体表面积题。先数一数：正方体一共有几个面？每个面是什么形状？</div>
+              </div>
+              <div class="composer">
+                <textarea placeholder="写下你的答案或思路">6 个正方形面</textarea>
+                <div class="row">
+                  <button type="button" class="btn secondary">卡住了，提示一下</button>
+                  <button type="button" class="btn primary" style="margin-left:auto">确认</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DONE -->
+    <section class="device" id="screen-done" aria-label="完整解答">
+      <aside class="sidebar">
+        <div class="logo"><img src="/static/hifi/assets/app-logo.png" alt="logo" /></div>
+        <button class="nav-btn" data-go="home" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/></svg></button>
+        <button class="nav-btn" data-go="guide" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 4h8v4H8zM6 8h12v12H6z"/><path d="M9 12h6M9 16h4"/></svg></button>
+        <button class="nav-btn active" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></button>
+        <div class="spacer"></div>
+        <div class="avatar">学<span class="badge"></span></div>
+      </aside>
+      <div class="main">
+        <div class="top">
+          <h2>完整解答</h2>
+          <button type="button" class="btn primary">复制全文</button>
+        </div>
+        <div class="content">
+          <div class="done-view">
+            <div class="writeup">
+              <strong>【题目】</strong><br />
+              如图，在△ABC中，D、E分别是AB、AC上的点，DE∥BC，∠ADE=70°，∠A=40°，求∠C的度数。<br /><br />
+              <strong>【分析】</strong><br />
+              由 DE∥BC，可得同位角相等；结合三角形内角和求 ∠C。<br /><br />
+              <strong>【解答】</strong><br />
+              ∵ DE∥BC<br />
+              ∴ ∠ADE = ∠ABC = 70°（同位角）<br />
+              ∵ ∠A = 40°<br />
+              ∴ ∠C = 180° − 40° − 70° = 70°<br /><br />
+              <strong>【答案】</strong> ∠C = 70°
+            </div>
+            <p class="foot-note">由 DeepSeek 提供解题引导 · 每次只推进一步，鼓励你自己思考</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const screens = ["home", "search", "guide", "solid", "done"];
+    const splash = document.getElementById("splash");
+    let splashTimer = null;
+
+    function show(name) {
+      screens.forEach((id) => {
+        document.getElementById("screen-" + id).classList.toggle("active", id === name);
+      });
+      document.querySelectorAll("#tabs button[data-screen]").forEach((b) => {
+        b.classList.toggle("active", b.dataset.screen === name);
+      });
+    }
+
+    function endSplash() {
+      splash.classList.add("is-done");
+      if (splashTimer) {
+        clearTimeout(splashTimer);
+        splashTimer = null;
+      }
+    }
+
+    function playSplash() {
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      splash.classList.remove("is-done");
+      // restart CSS animations
+      splash.querySelectorAll(".splash-logo-wrap, .splash-logo, .splash-orbit span, .splash-brand, .splash-bar, .splash-bar i")
+        .forEach((el) => {
+          el.style.animation = "none";
+          void el.offsetWidth;
+          el.style.animation = "";
+        });
+      if (splashTimer) clearTimeout(splashTimer);
+      splashTimer = setTimeout(endSplash, reduced ? 400 : 2600);
+    }
+
+    document.getElementById("splashSkip").addEventListener("click", endSplash);
+    document.getElementById("replayIntro").addEventListener("click", playSplash);
+    playSplash();
+
+    document.getElementById("tabs").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-screen]");
+      if (btn) show(btn.dataset.screen);
+    });
+    document.body.addEventListener("click", (e) => {
+      const go = e.target.closest("[data-go]");
+      if (go) show(go.dataset.go);
+    });
+    document.querySelectorAll(".tool").forEach((t) => {
+      t.addEventListener("click", () => {
+        const bar = t.parentElement;
+        const group = [...bar.querySelectorAll(".tool")];
+        const i = group.indexOf(t);
+        if (i <= 3) {
+          group.slice(0, 4).forEach((x) => x.classList.remove("on"));
+          t.classList.add("on");
+        } else {
+          group.slice(4).forEach((x) => x.classList.remove("on"));
+          t.classList.add("on");
+        }
+      });
+    });
+    document.querySelectorAll(".chip").forEach((c) => {
+      c.addEventListener("click", () => {
+        c.parentElement.querySelectorAll(".chip").forEach((x) => x.classList.remove("on"));
+        c.classList.add("on");
+      });
+    });
+  </script>
+</body>
+</html>

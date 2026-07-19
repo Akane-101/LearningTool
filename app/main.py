@@ -16,14 +16,19 @@ from .config import (
 )
 from .vision import analyze_geometry_image
 from .asr import asr_configured, transcribe_audio
-from .ai_guide import get_session, reply_session, start_session as ai_start_session
+from .ai_guide import (
+    ensure_session_review,
+    get_session,
+    reply_session,
+    start_session as ai_start_session,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
     title="解三角形 AI 引导",
     description="DeepSeek 逐步引导初中生解三角形角度题",
-    version="0.3.0",
+    version="0.3.1",
 )
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -193,5 +198,19 @@ async def ai_status(session_id: str):
         "problem_text": session.get("problem_text", ""),
         "completed": session.get("completed", False),
         "final_solution": session.get("final_solution", ""),
+        "review": session.get("review"),
         "turns": session.get("turns", 0),
     }
+
+
+@app.post("/api/ai/{session_id}/review")
+async def ai_review(session_id: str):
+    """题目完成后生成/增强做题反馈（完整解答之外的总结与建议）。"""
+    if not api_key_configured():
+        return {"ok": False, "message": "未配置 DeepSeek API Key。"}
+    try:
+        return ensure_session_review(session_id, enrich=True)
+    except RuntimeError as exc:
+        return {"ok": False, "message": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "message": f"生成反馈失败：{exc}"}

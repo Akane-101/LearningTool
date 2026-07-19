@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>解三角形 · UI Wireframe v2</title>
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #6b7280;
+      --line: #b8b8b8;
+      --line-dash: #9ca3af;
+      --fill: #e5e7eb;
+      --fill-2: #f3f4f6;
+      --white: #fff;
+      --note: #2563eb;
+      --note-bg: #eff6ff;
+      --hot: #dc2626;
+      --page: #fafafa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--page);
+      line-height: 1.45;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: #111;
+      color: #fff;
+      padding: 0.75rem 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.25rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .topbar h1 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .topbar p {
+      margin: 0;
+      font-size: 0.78rem;
+      opacity: 0.75;
+    }
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .nav a {
+      color: #fff;
+      text-decoration: none;
+      font-size: 0.75rem;
+      padding: 0.35rem 0.65rem;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 999px;
+      opacity: 0.9;
+    }
+    .nav a:hover { background: rgba(255,255,255,0.12); }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 1.5rem 1.25rem 4rem;
+    }
+    .intro {
+      border: 1px dashed var(--line-dash);
+      background: var(--white);
+      padding: 1rem 1.15rem;
+      margin-bottom: 2rem;
+    }
+    .intro h2 {
+      margin: 0 0 0.5rem;
+      font-size: 1.05rem;
+    }
+    .intro ul {
+      margin: 0.4rem 0 0;
+      padding-left: 1.2rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+    .screen {
+      margin-bottom: 3.5rem;
+      scroll-margin-top: 4rem;
+    }
+    .screen-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.5rem 1rem;
+      margin-bottom: 0.85rem;
+      border-bottom: 2px solid #111;
+      padding-bottom: 0.45rem;
+    }
+    .screen-id {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: #111;
+      color: #fff;
+      padding: 0.2rem 0.5rem;
+    }
+    .screen-head h3 {
+      margin: 0;
+      font-size: 1.15rem;
+    }
+    .screen-head .meta {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 220px;
+      gap: 1rem;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    /* Device frames */
+    .device {
+      background: var(--white);
+      border: 2px solid #111;
+      position: relative;
+    }
+    .device.desktop { min-height: 560px; }
+    .device.phone {
+      width: min(360px, 100%);
+      min-height: 640px;
+      margin: 0 auto;
+    }
+    .chrome {
+      height: 36px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0 0.75rem;
+      background: var(--fill-2);
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--fill);
+      border: 1px solid var(--line);
+    }
+    .frame-body { padding: 0; }
+    /* Wire UI primitives */
+    .w-row { display: flex; gap: 0.5rem; align-items: center; }
+    .w-row.between { justify-content: space-between; }
+    .w-stack { display: flex; flex-direction: column; gap: 0.55rem; }
+    .w-box {
+      border: 1.5px solid var(--line);
+      background: var(--fill-2);
+      min-height: 28px;
+    }
+    .w-box.dashed { border-style: dashed; background: #fff; }
+    .w-box.solid { background: var(--fill); }
+    .w-label {
+      font-size: 0.68rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .w-text {
+      font-size: 0.82rem;
+      color: var(--ink);
+    }
+    .w-muted { font-size: 0.75rem; color: var(--muted); }
+    .w-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1.5px solid #111;
+      background: #fff;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+    .w-btn.primary { background: #111; color: #fff; }
+    .w-btn.ghost { background: #fff; border-style: dashed; }
+    .w-btn.active { outline: 2px solid var(--note); outline-offset: 1px; }
+    .w-chip {
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 0.3rem 0.55rem;
+      font-size: 0.7rem;
+      border-radius: 999px;
+    }
+    .w-chip.filled { background: var(--fill); }
+    .w-area {
+      border: 1.5px solid var(--line);
+      min-height: 72px;
+      padding: 0.5rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      background: #fff;
+    }
+    .w-hotspot {
+      position: relative;
+    }
+    .w-hotspot::after {
+      content: attr(data-n);
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--hot);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+    /* App shells */
+    .app-shell {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      min-height: 520px;
+    }
+    .rail {
+      border-right: 1.5px solid var(--line);
+      background: var(--fill-2);
+      padding: 0.65rem 0.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      align-items: center;
+    }
+    .rail .ico {
+      width: 32px;
+      height: 32px;
+      border: 1.5px solid var(--line);
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      color: var(--muted);
+    }
+    .rail .ico.on { border-color: #111; background: #111; color: #fff; }
+    .main-pad { padding: 1rem 1.1rem 1.25rem; }
+    .split-2 {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 0.75rem;
+      min-height: 380px;
+    }
+    @media (max-width: 700px) {
+      .split-2 { grid-template-columns: 1fr; }
+      .app-shell { grid-template-columns: 1fr; }
+      .rail { flex-direction: row; border-right: 0; border-bottom: 1.5px solid var(--line); }
+    }
+    .panel {
+      border: 1.5px solid var(--line);
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel-h {
+      padding: 0.5rem 0.65rem;
+      border-bottom: 1px solid var(--line);
+      font-size: 0.78rem;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--fill-2);
+    }
+    .panel-b { padding: 0.65rem; flex: 1; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      padding: 0.4rem 0.55rem;
+      border-bottom: 1px dashed var(--line);
+    }
+    .stage {
+      height: 220px;
+      border: 1.5px dashed var(--line-dash);
+      margin: 0.55rem;
+      background:
+        repeating-linear-gradient(0deg, transparent, transparent 19px, #eee 20px),
+        repeating-linear-gradient(90deg, transparent, transparent 19px, #eee 20px);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tri {
+      width: 0;
+      height: 0;
+      border-left: 70px solid transparent;
+      border-right: 70px solid transparent;
+      border-bottom: 110px solid #c5c5c5;
+      position: relative;
+    }
+    .tri::after {
+      content: "△ABC";
+      position: absolute;
+      left: -18px;
+      top: 48px;
+      font-size: 0.7rem;
+      color: #444;
+      width: 40px;
+    }
+    .photo-ghost {
+      position: absolute;
+      inset: 18px 40px;
+      border: 2px dashed #999;
+      background: rgba(180,180,180,0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .chat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      max-height: 260px;
+      overflow: hidden;
+    }
+    .bubble {
+      max-width: 92%;
+      padding: 0.45rem 0.55rem;
+      font-size: 0.72rem;
+      border: 1px solid var(--line);
+      background: var(--fill-2);
+    }
+    .bubble.ai { align-self: flex-start; }
+    .bubble.me { align-self: flex-end; background: #fff; border-style: solid; border-color: #111; }
+    .bubble.hint {
+      align-self: flex-start;
+      border-style: dashed;
+      background: #fffbeb;
+    }
+    .bubble.fig {
+      align-self: flex-start;
+      width: 70%;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+    }
+    .notes {
+      border: 1px solid var(--note);
+      background: var(--note-bg);
+      padding: 0.75rem;
+      font-size: 0.78rem;
+    }
+    .notes h4 {
+      margin: 0 0 0.45rem;
+      font-size: 0.78rem;
+      color: var(--note);
+    }
+    .notes ol {
+      margin: 0;
+      padding-left: 1.1rem;
+      color: #1e3a5f;
+    }
+    .notes li { margin-bottom: 0.35rem; }
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      align-items: center;
+      margin: 0.75rem 0 0;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .flow span.arrow { opacity: 0.5; }
+    .flow .step {
+      border: 1px solid var(--line);
+      padding: 0.2rem 0.45rem;
+      background: #fff;
+    }
+    .hero-block {
+      padding: 1.25rem 0 0.5rem;
+    }
+    .hero-block .title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin: 0 0 0.35rem;
+    }
+    .drop {
+      border: 2px dashed var(--line-dash);
+      min-height: 140px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 1rem;
+      text-align: center;
+    }
+    .samples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+    .fb-ok { color: #166534; font-size: 0.72rem; }
+    .fb-bad { color: #991b1b; font-size: 0.72rem; }
+    .writeup {
+      background: #1f2937;
+      color: #d1d5db;
+      min-height: 160px;
+      padding: 0.75rem;
+      font-size: 0.72rem;
+      font-family: ui-monospace, monospace;
+    }
+    .state-tag {
+      display: inline-block;
+      font-size: 0.65rem;
+      border: 1px solid var(--line);
+      padding: 0.1rem 0.4rem;
+      color: var(--muted);
+      margin-left: 0.35rem;
+    }
+    .duo {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 800px) {
+      .duo { grid-template-columns: 1fr; }
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.75rem;
+    }
+    .legend i {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 1px solid var(--line);
+      vertical-align: -2px;
+      margin-right: 0.25rem;
+    }
+    .legend .b { background: var(--fill-2); }
+    .legend .d { border-style: dashed; background: #fff; }
+    .legend .h { background: var(--hot); border-color: var(--hot); }
+    footer.wf-foot {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h1>解三角形 AI 引导 · UI Wireframe v2</h1>
+      <p>基于现有功能 + 线上 UI 结构重绘 · 独立稿，未改动原 Figma 文件</p>
+    </div>
+    <nav class="nav">
+      <a href="#s00">00 总览</a>
+      <a href="#s01">01 首页输入</a>
+      <a href="#s02">02 识图中</a>
+      <a href="#s03">03 摄像头</a>
+      <a href="#s04">04 引导·平面</a>
+      <a href="#s05">05 引导·立体</a>
+      <a href="#s06">06 完成</a>
+      <a href="#s07">07 移动端</a>
+    </nav>
+  </div>
+
+  <div class="wrap">
+    <section class="intro" id="s00">
+      <h2>设计说明</h2>
+      <p class="w-text" style="margin:0;font-size:0.88rem;color:var(--muted)">
+        本 wireframe 覆盖当前原型全部能力：多入口出题、OCR/识图、语音、示例题、AI 逐步对话、
+        平面几何板（拖动/画笔/叠加原图）、立体 3D 旋转、完整解答复制、中英切换。
+        布局在「单栏渐进面板」基础上，吸收你 Figma 中「侧栏导航 + 画板/对话分栏」的信息架构，做成可落地的新结构提案。
+      </p>
+      <ul>
+        <li>灰框 = 内容区 · 虚线框 = 可交互投放区 · 红点序号 = 关键交互（右侧注释）</li>
+        <li>不修改 Figma <code>FxDk0E4W6FRzmjQ4XhiN6U</code>；此页为独立交付物</li>
+        <li>视觉仍为线框保真，非最终视觉稿</li>
+      </ul>
+      <div class="flow">
+        <span class="step">输入题目</span><span class="arrow">→</span>
+        <span class="step">OCR / 识图（可选）</span><span class="arrow">→</span>
+        <span class="step">开始引导</span><span class="arrow">→</span>
+        <span class="step">画板 + 对话</span><span class="arrow">→</span>
+        <span class="step">完整解答</span>
+      </div>
+      <div class="legend">
+        <span><i class="b"></i>填充块</span>
+        <span><i class="d"></i>投放 / 可选区</span>
+        <span><i class="h"></i>关键标注点</span>
+      </div>
+    </section>
+
+    <!-- 01 Home -->
+    <section class="screen" id="s01">
+      <div class="screen-head">
+        <span class="screen-id">Screen 01</span>
+        <h3>首页 · 输入题目</h3>
+        <p class="meta">Desktop · 默认态 · 对应现有 Panel 1</p>
+      </div>
+      <div class="layout">
+        <div class="device desktop">
+          <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            127.0.0.1:8001 — AI 解题引导
+          </div>
+          <div class="frame-body">
+            <div class="app-shell">
+              <aside class="rail" aria-label="nav">
+                <div class="ico on">题</div>
+                <div class="ico">聊</div>
+                <div class="ico">解</div>
+                <div style="flex:1"></div>
+                <div class="ico">中/EN</div>
+              </aside>
+              <div class="main-pad w-stack">
+                <div class="w-row between">
+                  <div class="hero-block" style="padding-top:0">
+                    <p class="w-label">Product</p>
+                    <p class="title">AI 带你一步一步解题</p>
+                    <p class="w-muted">拍照看图 + 文字 → 识几何图 · 逐步引导</p>
+                  </div>
+                  <div class="w-row">
+                    <span class="w-btn primary" style="padding:0.25rem 0.5rem">中文</span>
+                    <span class="w-btn ghost" style="padding:0.25rem 0.5rem">EN</span>
+                  </div>
+                </div>
+
+                <div class="w-hotspot" data-n="1">
+                  <div class="drop">
+                    <p class="w-text" style="margin:0;font-weight:600">拖入题目图片 / Ctrl+V 粘贴</p>
+                    <p class="w-muted" style="margin:0">也支持相册、拍照、打开摄像头</p>
+                    <div class="w-row" style="flex-wrap:wrap;justify-content:center;margin-top:0.35rem">
+                      <span class="w-btn primary">上传图片</span>
+                      <span class="w-btn">拍照</span>
+                      <span class="w-btn">打开摄像头</span>
+                      <span class="w-btn ghost">清空图片</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="w-row between">
+                  <span class="w-label">题目文字（可改，可含已有过程）</span>
+                  <div class="w-row">
+                    <span class="w-btn ghost w-hotspot" data-n="2">语音输入</span>
+                    <span class="w-btn ghost">清空文字</span>
+                  </div>
+                </div>
+                <div class="w-area">在此输入或粘贴题目文字…</div>
+
+                <div>
+                  <p class="w-label" style="margin:0 0 0.35rem">快速练习 · 示例题</p>
+                  <div class="samples w-hotspot" data-n="3">
+                    <span class="w-chip filled">等边+平行线</span>
+                    <span class="w-chip">平行线求角</span>
+                    <span class="w-chip">直角+互余</span>
+                    <span class="w-chip">外角性质</span>
+                    <span class="w-chip">立体·正方体</span>
+                    <span class="w-chip">立体·圆锥</span>
+                    <span class="w-chip">…</span>
+                  </div>
+                </div>
+
+                <div class="w-row">
+                  <span class="w-btn primary w-hotspot" data-n="4">开始 AI 引导</span>
+                  <span class="w-muted">未开始</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          <h4>注释</h4>
+          <ol>
+            <li><strong>多入口出题</strong>：拖放 / 粘贴 / 上传 / 系统拍照 / 摄像头实时拍，统一走 OCR+识图。</li>
+            <li><strong>语音</strong>：MediaRecorder → ASR，追加到题干（答题区同理）。</li>
+            <li><strong>示例芯片</strong>：填入预置题（平面+立体）；中英切换时换样本库。</li>
+            <li><strong>开始引导</strong>：提交文字 + 可选 image/geometry/figure；成功后进入 Screen 04。</li>
+          </ol>
+          <p style="margin:0.75rem 0 0;font-size:0.72rem;color:#1e3a5f">
+            相对现网：左侧窄轨导航为新提案（题 / 聊 / 解 / 语言），内容区仍保留现有字段，降低学习成本。
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 02 OCR -->
+    <section class="screen" id="s02">
+      <div class="screen-head">
+        <span class="screen-id">Screen 02</span>
+        <h3>识图中 / 预览</h3>
+        <p class="meta">Upload 后 · OCR + 几何解析状态</p>
+      </div>
+      <div class="layout">
+        <div class="device desktop">
+          <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span> 识图状态</div>
+          <div class="main-pad w-stack">
+            <div class="drop" style="min-height:180px;border-style:solid;background:var(--fill-2)">
+              <div class="w-box solid" style="width:55%;height:120px;display:flex;align-items:center;justify-content:center;border-color:#111">
+                <span class="w-muted">[ 题目照片预览 ]</span>
+              </div>
+              <p class="w-text w-hotspot" data-n="1" style="margin:0.5rem 0 0">正在识别文字与几何结构…</p>
+            </div>
+            <div class="w-area" style="min-height:56px;color:var(--ink)">
+              OCR 回填的题目文字（可编辑）…
+            </div>
+            <div class="w-row between">
+              <span class="w-muted">状态：部分成功 / 失败时仍可手改文字后继续</span>
+              <span class="w-btn primary">开始 AI 引导</span>
+            </div>
+            <p class="w-muted" style="margin:0">可选：识别后提前露出画板草稿（与现网 early workbench 一致）</p>
+          </div>
+        </div>
+        <aside class="notes">
+          <h4>注释</h4>
+          <ol>
+            <li>状态文案区分 pending / success / partial / fail；失败不阻断纯文字引导。</li>
+            <li>有几何结果时可预开画板，方便开引导前微调对齐。</li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 03 Camera -->
+    <section class="screen" id="s03">
+      <div class="screen-head">
+        <span class="screen-id">Screen 03</span>
+        <h3>摄像头面板</h3>
+        <p class="meta">打开摄像头 · 内嵌面板（非 Modal）</p>
+      </div>
+      <div class="layout">
+        <div class="device desktop" style="min-height:360px">
+          <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span> 摄像头</div>
+          <div class="main-pad w-stack">
+            <div class="w-box solid w-hotspot" data-n="1" style="height:240px;display:flex;align-items:center;justify-content:center;border-color:#111">
+              <span class="w-muted">&lt;video&gt; 实时预览</span>
+            </div>
+            <div class="w-row">
+              <span class="w-btn primary">拍照识别</span>
+              <span class="w-btn ghost">关闭摄像头</span>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          <h4>注释</h4>
+          <ol>
+            <li>getUserMedia → 画布截帧 → 与上传同一 OCR 链路。</li>
+            <li>保持内嵌面板，避免打断输入上下文（与现网一致）。</li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 04 Guide plane -->
+    <section class="screen" id="s04">
+      <div class="screen-head">
+        <span class="screen-id">Screen 04</span>
+        <h3>AI 引导 · 平面几何</h3>
+        <p class="meta">画板 + 对话分栏 · 核心会话态</p>
+      </div>
+      <div class="layout">
+        <div class="device desktop">
+          <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span> 引导中</div>
+          <div class="app-shell">
+            <aside class="rail">
+              <div class="ico">题</div>
+              <div class="ico on">聊</div>
+              <div class="ico">解</div>
+              <div style="flex:1"></div>
+              <div class="ico">中/EN</div>
+            </aside>
+            <div class="main-pad" style="padding-top:0.75rem">
+              <p class="w-label" style="margin:0 0 0.5rem">2. AI 逐步引导 <span class="state-tag">session active</span></p>
+              <div class="split-2">
+                <div class="panel w-hotspot" data-n="1">
+                  <div class="panel-h">
+                    <span>几何画板</span>
+                    <span class="w-muted">平面</span>
+                  </div>
+                  <div class="toolbar">
+                    <span class="w-btn active" style="padding:0.25rem 0.45rem">拖动</span>
+                    <span class="w-btn" style="padding:0.25rem 0.45rem">还原图形</span>
+                    <span class="w-btn" style="padding:0.25rem 0.45rem">画笔</span>
+                    <span class="w-btn" style="padding:0.25rem 0.45rem">橡皮</span>
+                    <span class="w-btn" style="padding:0.25rem 0.45rem">清空标注</span>
+                    <span class="w-btn active" style="padding:0.25rem 0.45rem">示意图</span>
+                    <span class="w-btn" style="padding:0.25rem 0.45rem">叠加原图</span>
+                    <span class="w-btn" style="padding:0.25rem 0.45rem">只看原图</span>
+                  </div>
+                  <div class="stage">
+                    <div class="photo-ghost">原图层（叠加模式可见）</div>
+                    <div class="tri"></div>
+                  </div>
+                  <p class="w-muted" style="padding:0 0.55rem 0.55rem;margin:0">拖动点/边 · 叠原图对齐 · 可还原基准图</p>
+                </div>
+                <div class="panel">
+                  <div class="panel-h"><span>对话</span><span class="w-muted">逐步推进</span></div>
+                  <div class="panel-b w-stack">
+                    <div class="chat">
+                      <div class="bubble ai">先看看已知：DE∥BC，∠ADE=70°，∠A=40°。你打算怎么利用平行线找 ∠C？</div>
+                      <div class="bubble me">同位角相等？</div>
+                      <div class="bubble hint">提示：想想哪个角与 ∠C 有关…</div>
+                      <div class="bubble fig">[ 附图 SVG ]</div>
+                    </div>
+                    <div class="w-row between">
+                      <span class="w-label">你的回答</span>
+                      <span class="w-btn ghost" style="padding:0.2rem 0.45rem">语音输入</span>
+                    </div>
+                    <div class="w-area" style="min-height:48px">写下答案或思路…</div>
+                    <div class="w-row">
+                      <span class="w-btn ghost w-hotspot" data-n="2">卡住了，提示一下</span>
+                      <span class="w-btn primary w-hotspot" data-n="3">提交回答</span>
+                    </div>
+                    <p class="fb-ok">反馈：方向对，再推进一步…</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          <h4>注释</h4>
+          <ol>
+            <li><strong>工具条</strong>：拖动 / 还原 / 画笔 / 橡皮 / 清空；背景三态：示意图 · 叠加原图 · 只看原图（无图时隐藏后两项）。</li>
+            <li><strong>提示</strong>：独立 hint 气泡（琥珀色虚线），不占「学生回答」位。</li>
+            <li><strong>提交</strong>：busy 时禁用按钮；反馈色分 ok / bad / neutral。</li>
+          </ol>
+          <p style="margin:0.75rem 0 0;font-size:0.72rem;color:#1e3a5f">
+            分栏对齐你 Figma 的「画板 | 对话」；现网为上下堆叠——本稿建议桌面用分栏、窄屏改回堆叠。
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 05 Solid -->
+    <section class="screen" id="s05">
+      <div class="screen-head">
+        <span class="screen-id">Screen 05</span>
+        <h3>AI 引导 · 立体图形</h3>
+        <p class="meta">3D Canvas · 旋转 · 标注笔</p>
+      </div>
+      <div class="layout">
+        <div class="device desktop" style="min-height:420px">
+          <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span> 立体题</div>
+          <div class="main-pad">
+            <div class="split-2">
+              <div class="panel">
+                <div class="panel-h"><span>几何画板</span><span class="w-muted">立体</span></div>
+                <div class="toolbar">
+                  <span class="w-btn active" style="padding:0.25rem 0.45rem">旋转</span>
+                  <span class="w-btn" style="padding:0.25rem 0.45rem">画笔</span>
+                  <span class="w-btn" style="padding:0.25rem 0.45rem">橡皮</span>
+                  <span class="w-btn" style="padding:0.25rem 0.45rem">清空标注</span>
+                </div>
+                <div class="stage w-hotspot" data-n="1">
+                  <div style="width:90px;height:90px;border:2px solid #666;transform:rotateX(18deg) rotateY(-28deg);background:rgba(0,0,0,0.04);display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:#555">
+                    立方体
+                  </div>
+                </div>
+                <p class="w-muted" style="padding:0 0.55rem 0.55rem;margin:0">形状锁定 · 拖拽旋转视角 · 无叠加原图 / 还原</p>
+              </div>
+              <div class="panel">
+                <div class="panel-h">对话</div>
+                <div class="panel-b">
+                  <div class="bubble ai">这是正方体表面积题。先数一数有几个面？</div>
+                  <div class="w-area" style="min-height:48px;margin-top:0.5rem">…</div>
+                  <div class="w-row" style="margin-top:0.5rem">
+                    <span class="w-btn ghost">提示</span>
+                    <span class="w-btn primary">提交</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          <h4>注释</h4>
+          <ol>
+            <li>工具从「拖动」变为「旋转」；隐藏还原 / 叠加原图 / 只看原图。</li>
+            <li>支持立方体、长方体、三棱柱、四棱锥、圆柱、圆锥等（solid3d）。</li>
+            <li>一旦进入立体，会话内不被平面 figure 覆盖（现网锁定逻辑）。</li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 06 Done -->
+    <section class="screen" id="s06">
+      <div class="screen-head">
+        <span class="screen-id">Screen 06</span>
+        <h3>完整解答</h3>
+        <p class="meta">completed · 引导区收起</p>
+      </div>
+      <div class="layout">
+        <div class="device desktop" style="min-height:360px">
+          <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span> 完成</div>
+          <div class="app-shell">
+            <aside class="rail">
+              <div class="ico">题</div>
+              <div class="ico">聊</div>
+              <div class="ico on">解</div>
+            </aside>
+            <div class="main-pad w-stack">
+              <div class="w-row between">
+                <p class="title" style="font-size:1.1rem;margin:0">完整解答</p>
+                <span class="w-btn primary w-hotspot" data-n="1">复制全文</span>
+              </div>
+              <div class="writeup">
+【题目】…<br/>
+【分析】…<br/>
+【解答】…<br/>
+【答案】∠C = 70°
+              </div>
+              <p class="w-muted" style="margin:0">页脚：由 DeepSeek 提供解题引导 · 每次只推进一步</p>
+            </div>
+          </div>
+        </div>
+        <aside class="notes">
+          <h4>注释</h4>
+          <ol>
+            <li>Clipboard 复制；按钮短暂显示「已复制」。</li>
+            <li>引导面板隐藏，侧栏「解」高亮，强调终态。</li>
+          </ol>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 07 Mobile -->
+    <section class="screen" id="s07">
+      <div class="screen-head">
+        <span class="screen-id">Screen 07</span>
+        <h3>移动端适配</h3>
+        <p class="meta">Phone · 输入态 + 引导态</p>
+      </div>
+      <div class="duo">
+        <div>
+          <p class="w-label" style="margin-bottom:0.5rem">A · 输入</p>
+          <div class="device phone">
+            <div class="chrome" style="justify-content:center">9:41</div>
+            <div class="main-pad w-stack" style="padding:0.75rem">
+              <div class="w-row between">
+                <strong style="font-size:0.95rem">AI 解题</strong>
+                <span class="w-btn" style="padding:0.15rem 0.4rem;font-size:0.65rem">中/EN</span>
+              </div>
+              <div class="drop" style="min-height:100px">
+                <p class="w-muted" style="margin:0">上传 / 拍照</p>
+                <div class="w-row">
+                  <span class="w-btn primary" style="font-size:0.68rem">上传</span>
+                  <span class="w-btn" style="font-size:0.68rem">拍照</span>
+                </div>
+              </div>
+              <div class="w-area" style="min-height:64px">题目文字…</div>
+              <div class="samples">
+                <span class="w-chip">示例1</span>
+                <span class="w-chip">示例2</span>
+              </div>
+              <span class="w-btn primary" style="width:100%">开始 AI 引导</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <p class="w-label" style="margin-bottom:0.5rem">B · 引导（画板在上）</p>
+          <div class="device phone">
+            <div class="chrome" style="justify-content:center">9:41</div>
+            <div class="main-pad w-stack" style="padding:0.65rem">
+              <div class="panel">
+                <div class="toolbar" style="padding:0.3rem">
+                  <span class="w-btn active" style="padding:0.15rem 0.35rem;font-size:0.65rem">拖动</span>
+                  <span class="w-btn" style="padding:0.15rem 0.35rem;font-size:0.65rem">画笔</span>
+                  <span class="w-btn" style="padding:0.15rem 0.35rem;font-size:0.65rem">叠加</span>
+                </div>
+                <div class="stage" style="height:140px;margin:0.4rem">
+                  <div class="tri" style="border-left-width:40px;border-right-width:40px;border-bottom-width:64px"></div>
+                </div>
+              </div>
+              <div class="bubble ai">先观察已知条件…</div>
+              <div class="w-area" style="min-height:48px">回答…</div>
+              <div class="w-row">
+                <span class="w-btn ghost" style="flex:1;font-size:0.7rem">提示</span>
+                <span class="w-btn primary" style="flex:1;font-size:0.7rem">提交</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="notes" style="margin-top:1rem;max-width:100%">
+        <h4>移动端要点</h4>
+        <ol>
+          <li>隐藏左侧轨，语言放顶栏；拍照优先（capture=environment）。</li>
+          <li>引导态强制竖向：画板 → 对话 → 作答，保证触控拖点与画笔。</li>
+          <li>示例芯片横向可滑；主 CTA 通栏。</li>
+        </ol>
+      </aside>
+    </section>
+
+    <!-- Feature matrix -->
+    <section class="screen" id="s08">
+      <div class="screen-head">
+        <span class="screen-id">Matrix</span>
+        <h3>功能 ↔ 界面映射</h3>
+        <p class="meta">验收对照表</p>
+      </div>
+      <div class="device" style="padding:0;overflow:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:0.78rem">
+          <thead>
+            <tr style="background:#111;color:#fff;text-align:left">
+              <th style="padding:0.55rem 0.75rem">功能</th>
+              <th style="padding:0.55rem 0.75rem">所在屏</th>
+              <th style="padding:0.55rem 0.75rem">现网已有</th>
+              <th style="padding:0.55rem 0.75rem">本稿变化</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid var(--line)"><td style="padding:0.5rem 0.75rem">拖放/粘贴/上传/拍照</td><td style="padding:0.5rem 0.75rem">01–03</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">保留；侧栏导航新增</td></tr>
+            <tr style="border-bottom:1px solid var(--line);background:var(--fill-2)"><td style="padding:0.5rem 0.75rem">摄像头实时拍</td><td style="padding:0.5rem 0.75rem">03</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">仍为内嵌面板</td></tr>
+            <tr style="border-bottom:1px solid var(--line)"><td style="padding:0.5rem 0.75rem">OCR + 几何识图</td><td style="padding:0.5rem 0.75rem">02</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">状态区更明确</td></tr>
+            <tr style="border-bottom:1px solid var(--line);background:var(--fill-2)"><td style="padding:0.5rem 0.75rem">语音 ASR</td><td style="padding:0.5rem 0.75rem">01 / 04</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">同位置</td></tr>
+            <tr style="border-bottom:1px solid var(--line)"><td style="padding:0.5rem 0.75rem">示例题芯片</td><td style="padding:0.5rem 0.75rem">01</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">分组标签可选</td></tr>
+            <tr style="border-bottom:1px solid var(--line);background:var(--fill-2)"><td style="padding:0.5rem 0.75rem">AI 对话 / 提示 / 反馈</td><td style="padding:0.5rem 0.75rem">04–05</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">桌面分栏</td></tr>
+            <tr style="border-bottom:1px solid var(--line)"><td style="padding:0.5rem 0.75rem">平面画板 + 叠原图</td><td style="padding:0.5rem 0.75rem">04</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">工具条置顶固定</td></tr>
+            <tr style="border-bottom:1px solid var(--line);background:var(--fill-2)"><td style="padding:0.5rem 0.75rem">立体 3D 旋转</td><td style="padding:0.5rem 0.75rem">05</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">独立屏说明工具差异</td></tr>
+            <tr style="border-bottom:1px solid var(--line)"><td style="padding:0.5rem 0.75rem">完整解答 + 复制</td><td style="padding:0.5rem 0.75rem">06</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">侧栏「解」态</td></tr>
+            <tr style="background:var(--fill-2)"><td style="padding:0.5rem 0.75rem">中英切换</td><td style="padding:0.5rem 0.75rem">全局</td><td style="padding:0.5rem 0.75rem">✓</td><td style="padding:0.5rem 0.75rem">轨底 / 顶栏</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="wf-foot">
+      Wireframe v2 · triangle-guide · 独立于 Figma Untitled (FxDk0E4W6FRzmjQ4XhiN6U) ·
+      可将本页截图导入 Figma 新文件继续视觉细化
+    </footer>
+  </div>
+</body>
+</html>

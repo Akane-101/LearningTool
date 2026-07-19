@@ -44,8 +44,18 @@ SYSTEM_PROMPTS = {
   "hint": "可选短提示，没有则空字符串",
   "completed": false,
   "final_solution": "仅 completed 为 true 时填写",
+  "review": null,
   "figure": null或对象
 }
+
+当且仅当 completed 为 true 时，必须填写 review（做完整道题后的反馈与建议）：
+{
+  "summary": "一两句总评，鼓励为主",
+  "strengths": ["做得好的点1", "点2"],
+  "improvements": ["可改进的点1"],
+  "suggestions": ["方法记忆/易错提醒", "可继续练习的题型方向"]
+}
+未完成时 review 填 null。
 
 平面几何 figure（三角形等）：
 {
@@ -94,8 +104,18 @@ Each reply must be valid JSON (no markdown), format:
   "hint": "optional short hint",
   "completed": false,
   "final_solution": "only when completed is true",
+  "review": null,
   "figure": null or object
 }
+
+When and only when completed is true, you MUST include review (end-of-problem feedback):
+{
+  "summary": "1–2 sentence overall feedback, encouraging",
+  "strengths": ["what went well 1", "item 2"],
+  "improvements": ["what to improve 1"],
+  "suggestions": ["method tip / common pitfall", "what to practice next"]
+}
+If not completed, set review to null.
 
 Plane figure:
 {
@@ -225,9 +245,282 @@ def _call_ai(messages: list[dict[str, Any]]) -> dict[str, Any]:
     data.setdefault("completed", False)
     data.setdefault("final_solution", "")
     data.setdefault("figure", None)
+    data.setdefault("review", None)
     if "is_correct" not in data:
         data["is_correct"] = None
     return data
+
+
+def _as_str_list(value: Any, limit: int = 5) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, list):
+        out: list[str] = []
+        for item in value:
+            s = str(item).strip()
+            if s:
+                out.append(s)
+            if len(out) >= limit:
+                break
+        return out
+    return []
+
+
+def _normalize_review(raw: Any, lang: str = "zh") -> Optional[dict[str, Any]]:
+    """把 AI 返回的 review 整理成统一结构；无效则返回 None。"""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return None
+        return {
+            "summary": text,
+            "strengths": [],
+            "improvements": [],
+            "suggestions": [],
+        }
+    if not isinstance(raw, dict):
+        return None
+
+    summary = str(
+        raw.get("summary")
+        or raw.get("overview")
+        or raw.get("overall")
+        or ""
+    ).strip()
+    strengths = _as_str_list(raw.get("strengths") or raw.get("pros"))
+    improvements = _as_str_list(
+        raw.get("improvements") or raw.get("weaknesses") or raw.get("to_improve")
+    )
+    suggestions = _as_str_list(
+        raw.get("suggestions") or raw.get("advice") or raw.get("next_steps")
+    )
+
+    if not summary and not strengths and not improvements and not suggestions:
+        return None
+    if not summary:
+        summary = (
+            "本题已完成，下面是针对你做题过程的反馈。"
+            if lang == "zh"
+            else "Problem completed. Here is feedback on your work."
+        )
+    return {
+        "summary": summary,
+        "strengths": strengths,
+        "improvements": improvements,
+        "suggestions": suggestions,
+    }
+
+
+def _generate_review(session: dict[str, Any], ai: dict[str, Any]) -> dict[str, Any]:
+    """完成后若模型未带 review，再单独生成一份做题反馈。"""
+    lang = session.get("lang", "zh")
+    problem = session.get("problem_text", "")
+    solution = ai.get("final_solution") or session.get("final_solution") or ai.get("message", "")
+    turns = session.get("turns", 0)
+
+    # 从对话里抽取学生发言摘要
+    student_bits: list[str] = []
+    for msg in session.get("messages") or []:
+        if msg.get("role") != "user":
+            continue
+        content = str(msg.get("content") or "").strip()
+        if not content or content.startswith("题目如下") or content.startswith("Here is the problem"):
+            continue
+        if "卡住了" in content or "I'm stuck" in content:
+            student_bits.append("[asked for a hint]" if lang == "en" else "[请求过提示]")
+            continue
+        student_bits.append(content[:400])
+    student_log = "\n---\n".join(student_bits[-6:]) or (
+        "(no detailed student answers recorded)" if lang == "en" else "（对话中学生作答较少）"
+    )
+
+    if lang == "en":
+        prompt = (
+            "The student just finished this middle-school math problem with step-by-step guidance.\n"
+            "Write an encouraging post-problem review as JSON only (no markdown):\n"
+            '{"summary":"...","strengths":["..."],"improvements":["..."],"suggestions":["..."]}\n'
+            f"Problem:\n{problem[:1200]}\n\n"
+            f"Final solution:\n{str(solution)[:1200]}\n\n"
+            f"Student turns (~{turns}):\n{student_log}\n\n"
+            "Keep each list to 1–3 short bullets. Focus on reasoning habits, not repeating the whole solution."
+        )
+    else:
+        prompt = (
+            "学生刚在逐步引导下做完一道初中数学题。请根据过程给出鼓励性的做题反馈。"
+            "只返回 JSON（不要 markdown）：\n"
+            '{"summary":"...","strengths":["..."],"improvements":["..."],"suggestions":["..."]}\n'
+            f"题目：\n{problem[:1200]}\n\n"
+            f"完整解答：\n{str(solution)[:1200]}\n\n"
+            f"学生互动约 {turns} 轮，作答摘要：\n{student_log}\n\n"
+            "每项列表 1～3 条短句。侧重思路习惯与易错点，不要整段重抄解答。"
+        )
+
+    client = _client()
+    try:
+        resp = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You output only valid JSON for student learning feedback."
+                        if lang == "en"
+                        else "你只输出合法 JSON，用于学生做题反馈。"
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+            max_tokens=500,
+        )
+        data = _extract_json(_message_text(resp.choices[0].message))
+        review = _normalize_review(data.get("review") or data, lang=lang)
+        if review:
+            return review
+    except Exception:
+        pass
+
+    # 兜底：不依赖模型也能展示
+    if lang == "en":
+        return {
+            "summary": "Nice work finishing this problem. Keep practicing explaining why each step works.",
+            "strengths": ["You stayed with the problem until the end."],
+            "improvements": ["Try stating the key theorem or property before calculating."],
+            "suggestions": [
+                "Review similar problems and mark which condition unlocks the next step.",
+            ],
+        }
+    return {
+        "summary": "这道题你已经做完了，坚持跟着思路走下去很棒。",
+        "strengths": ["能跟着引导把题目做完。"],
+        "improvements": ["下一步可以试着先说出用到的定理/性质，再动手算。"],
+        "suggestions": ["同类题多练时，标出「哪一个条件推出下一步」。"],
+    }
+
+
+def _local_review(session: dict[str, Any]) -> dict[str, Any]:
+    """不额外调模型、立刻可用的反馈（保证完成页一定有内容）。"""
+    lang = session.get("lang", "zh")
+    turns = int(session.get("turns") or 0)
+    asked_hint = False
+    for msg in session.get("messages") or []:
+        if msg.get("role") != "user":
+            continue
+        c = str(msg.get("content") or "")
+        if "卡住了" in c or "I'm stuck" in c:
+            asked_hint = True
+            break
+    if lang == "en":
+        strengths = ["You finished the whole problem with guided steps."]
+        improvements = []
+        suggestions = [
+            "After solving, restate the key property in one sentence from memory.",
+            "Try a similar problem and mark which given unlocks the next step.",
+        ]
+        if asked_hint:
+            strengths.append("You asked for a hint when stuck — good habit.")
+            improvements.append("Before asking for a hint, write the knowns and what you want to find.")
+        elif turns <= 3:
+            strengths.append("You reached the answer in relatively few steps.")
+            improvements.append("Try writing a short reason (because…) for the key step.")
+        else:
+            improvements.append("Try naming the theorem/property before calculating.")
+        return {
+            "summary": "Great job finishing this problem. Below is quick feedback; a fuller review may follow.",
+            "strengths": strengths[:3],
+            "improvements": improvements[:3] or ["Keep explaining why each step works."],
+            "suggestions": suggestions[:3],
+            "source": "local",
+        }
+    strengths = ["能跟着引导把整道题做完。"]
+    improvements = []
+    suggestions = [
+        "做完后试着不看解答，用一句话说出关键性质/定理。",
+        "同类题练习时，标出「哪个条件推出下一步」。",
+    ]
+    if asked_hint:
+        strengths.append("卡住时会求助提示，这是好习惯。")
+        improvements.append("下次求助前提前写下已知和要求什么。")
+    elif turns <= 3:
+        strengths.append("用较少轮次就接近答案。")
+        improvements.append("关键步骤可以补一句「因为…所以…」。")
+    else:
+        improvements.append("动手算之前，先说出用到的定理/性质。")
+    return {
+        "summary": "这道题你已经做完了。下面是针对过程的反馈与建议（完整解答在下方）。",
+        "strengths": strengths[:3],
+        "improvements": improvements[:3] or ["关键步骤可以写得更清楚一点。"],
+        "suggestions": suggestions[:3],
+        "source": "local",
+    }
+
+
+def _finalize_review(
+    session: dict[str, Any],
+    ai: dict[str, Any],
+    *,
+    enrich: bool = False,
+) -> dict[str, Any]:
+    """题目完成时写入 session.review。
+
+    默认先用模型自带 review，否则用本地即时反馈，避免再卡一轮 API。
+    enrich=True 时再调模型生成更细的反馈。
+    """
+    lang = session.get("lang", "zh")
+    review = _normalize_review(ai.get("review"), lang=lang)
+    if review is None and enrich:
+        review = _generate_review(session, ai)
+    if review is None:
+        review = _local_review(session)
+    elif "source" not in review:
+        review["source"] = "model"
+    session["review"] = review
+    return review
+
+
+def ensure_session_review(session_id: str, *, enrich: bool = True) -> dict[str, Any]:
+    """给已完成会话补全/增强做题反馈。"""
+    session = SESSIONS.get(session_id)
+    if not session:
+        return {"ok": False, "message": "会话不存在或已过期。"}
+    if not session.get("completed"):
+        return {"ok": False, "message": "题目尚未完成，还没有总结反馈。"}
+
+    existing = _normalize_review(session.get("review"), lang=session.get("lang", "zh"))
+    need_enrich = enrich and (
+        existing is None or existing.get("source") == "local"
+    )
+    if need_enrich:
+        ai_stub = {
+            "final_solution": session.get("final_solution", ""),
+            "message": "",
+            "review": None,
+        }
+        review = _generate_review(session, ai_stub)
+        if review:
+            review["source"] = "model"
+            session["review"] = review
+        elif existing:
+            session["review"] = existing
+        else:
+            session["review"] = _local_review(session)
+    elif existing is None:
+        session["review"] = _local_review(session)
+    else:
+        session["review"] = existing
+
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "completed": True,
+        "final_solution": session.get("final_solution", ""),
+        "review": session.get("review"),
+    }
 
 
 def _attach_figure(
@@ -379,9 +672,14 @@ def start_session(
         ),
         "completed": bool(ai.get("completed")),
         "final_solution": ai.get("final_solution") or "",
+        "review": None,
         "turns": 1,
     }
     SESSIONS[session_id] = session
+
+    review = None
+    if session["completed"]:
+        review = _finalize_review(session, ai)
 
     return {
         "ok": True,
@@ -391,6 +689,7 @@ def start_session(
         "hint": ai.get("hint", ""),
         "completed": session["completed"],
         "final_solution": session["final_solution"],
+        "review": review,
         "figure_svg": ai.get("figure_svg"),
         "figure_caption": ai.get("figure_caption"),
         "figure_data": ai.get("figure_data") or vision_figure,
@@ -413,22 +712,38 @@ def reply_session(
             "ok": True,
             "message": _lang_prefixed(
                 session.get("lang", "zh"),
-                "本题已经完成。可以查看完整解答，或换一题继续。",
-                "This problem is done. You can view the full solution or try another.",
+                "本题已经完成。可以查看完整解答与做题反馈，或换一题继续。",
+                "This problem is done. You can view the full solution and review, or try another.",
             ),
             "completed": True,
             "final_solution": session.get("final_solution", ""),
+            "review": session.get("review"),
         }
 
     lang = session.get("lang", "zh")
     messages: list[dict[str, str]] = session["messages"]
 
-    if want_hint and not student_answer.strip():
-        user_content = _lang_prefixed(
-            lang,
-            "我卡住了，请给一个更具体一点的提示，并尽量在 figure 里给出示意图（必须符合原题图片识别的图形），但不要直接给出最终答案。",
-            "I'm stuck. Please give a more specific hint and include a figure matching the photo geometry, but don't reveal the final answer.",
-        )
+    if want_hint:
+        # 点「提示」时始终走提示路径（不因输入框里有草稿而改成普通批改）
+        draft = student_answer.strip()
+        if lang == "en":
+            user_content = (
+                "I'm stuck. Give ONE more concrete hint in the JSON field \"hint\" "
+                "(required, non-empty). Also put a short encouragement in \"message\". "
+                "Do NOT set completed=true. Do NOT reveal the final numerical answer. "
+                "Include a figure if helpful."
+            )
+            if draft:
+                user_content += f"\n\nMy current draft (for context only):\n{draft}"
+        else:
+            user_content = (
+                "我卡住了。请务必在 JSON 的 hint 字段给出一条更具体的提示（必填、不能为空），"
+                "message 里写一句简短鼓励或下一步方向。"
+                "不要 completed=true，不要直接给出最终数值答案。"
+                "如有需要可配 figure 示意图。"
+            )
+            if draft:
+                user_content += f"\n\n这是我输入框里的草稿（仅供参考，请据此给提示）：\n{draft}"
     else:
         ans = student_answer.strip()
         if not ans:
@@ -448,6 +763,25 @@ def reply_session(
 
     messages.append({"role": "user", "content": user_content})
     ai = _call_ai(messages)
+    if want_hint:
+        # 模型常把提示写进 message/feedback，这里兜底保证 hint 有内容
+        hint = str(ai.get("hint") or "").strip()
+        if not hint:
+            hint = str(ai.get("message") or ai.get("feedback") or "").strip()
+        if not hint:
+            hint = _lang_prefixed(
+                lang,
+                "先把已知角写出来，再想想三角形内角和还缺哪一个。",
+                "Write down the known angles, then think which angle the triangle angle sum still needs.",
+            )
+        ai["hint"] = hint
+        ai["completed"] = False  # 点提示不应直接判完成
+        if not str(ai.get("message") or "").strip():
+            ai["message"] = _lang_prefixed(
+                lang,
+                "看下面的提示，试着自己算一步。",
+                "Use the hint below and try the next step yourself.",
+            )
     preferred = session.get("vision_figure")
     # 立体锁定 / 原题图：始终作为 preferred，避免后续变成可拖边的平面图
     if want_hint and not ai.get("figure") and preferred:
@@ -468,9 +802,11 @@ def reply_session(
     )})
 
     session["turns"] = session.get("turns", 0) + 1
+    review = None
     if ai.get("completed"):
         session["completed"] = True
         session["final_solution"] = ai.get("final_solution") or ai.get("message", "")
+        review = _finalize_review(session, ai)
 
     return {
         "ok": True,
@@ -481,6 +817,7 @@ def reply_session(
         "hint": ai.get("hint", ""),
         "completed": bool(session.get("completed")),
         "final_solution": session.get("final_solution", ""),
+        "review": review or session.get("review"),
         "turns": session["turns"],
         "figure_svg": ai.get("figure_svg"),
         "figure_caption": ai.get("figure_caption"),

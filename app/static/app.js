@@ -36,9 +36,19 @@ const I18N = {
     step2: "2. AI 逐步引导",
     answerPlaceholder: "写下你的答案或思路…\n如果已经写了部分过程（含 ∵∴=° 等），直接贴在这里，AI 会接着往下引导",
     hint: "卡住了，提示一下",
+    hintAsked: "（我卡住了，想要一个提示）",
+    hintLoading: "正在想提示…",
+    hintReady: "已给出提示，试试下一步。",
     submit: "提交回答",
     fullSolution: "完整解答",
-    copy: "复制全文",
+    doneBanner: "本题已完成 · 下面是反馈建议，以及完整解答",
+    reviewTitle: "做题反馈与建议",
+    reviewStrengths: "做得好的地方",
+    reviewImprovements: "可以改进",
+    reviewSuggestions: "建议与下一步",
+    reviewLoading: "正在生成更详细的反馈…",
+    reviewReady: "",
+    copy: "复制全文（含反馈）",
     copied: "已复制",
     footer: "由 DeepSeek 提供解题引导 · 每次只推进一步，鼓励你自己思考",
     thinking: "AI 思考中…",
@@ -117,9 +127,19 @@ const I18N = {
     step2: "2. AI Step-by-Step Guidance",
     answerPlaceholder: "Write your answer or approach…\nIf you have partial work (with ∵∴=° etc.), paste it here and AI will continue",
     hint: "I'm stuck, give me a hint",
+    hintAsked: "(I'm stuck — please give a hint)",
+    hintLoading: "Thinking of a hint…",
+    hintReady: "Hint ready — try the next step.",
     submit: "Submit Answer",
     fullSolution: "Full Solution",
-    copy: "Copy All",
+    doneBanner: "Done · Feedback first, then the full solution",
+    reviewTitle: "Feedback & Suggestions",
+    reviewStrengths: "What went well",
+    reviewImprovements: "What to improve",
+    reviewSuggestions: "Tips & next steps",
+    reviewLoading: "Generating a more detailed review…",
+    reviewReady: "",
+    copy: "Copy all (with feedback)",
     copied: "Copied",
     footer: "Powered by DeepSeek · One step at a time, encouraging you to think",
     thinking: "AI thinking…",
@@ -311,13 +331,100 @@ btnSubmit.addEventListener("click", () => sendReply(false));
 btnHint.addEventListener("click", () => sendReply(true));
 
 btnCopy.addEventListener("click", async () => {
-  const text = finalWriteup.textContent;
+  const parts = [finalWriteup.textContent || ""];
+  const reviewCard = $("reviewCard");
+  if (reviewCard && !reviewCard.hidden) {
+    const summary = ($("reviewSummary") && $("reviewSummary").textContent) || "";
+    const listText = (id, titleKey) => {
+      const items = [...($(id)?.querySelectorAll("li") || [])].map((li) => `- ${li.textContent}`);
+      if (!items.length) return "";
+      return `${t(titleKey)}\n${items.join("\n")}`;
+    };
+    const body = [
+      t("reviewTitle"),
+      summary,
+      listText("reviewStrengths", "reviewStrengths"),
+      listText("reviewImprovements", "reviewImprovements"),
+      listText("reviewSuggestions", "reviewSuggestions"),
+    ].filter(Boolean).join("\n\n");
+    if (body) parts.push(body);
+  }
+  const text = parts.join("\n\n").trim();
   try {
     await navigator.clipboard.writeText(text);
     btnCopy.textContent = t("copied");
     setTimeout(() => (btnCopy.textContent = t("copy")), 1200);
   } catch { alert(t("copyFailed")); }
 });
+
+function fillReviewList(ul, items) {
+  if (!ul) return;
+  ul.innerHTML = "";
+  (items || []).forEach((item) => {
+    const li = document.createElement("li");
+    li.textContent = item;
+    ul.appendChild(li);
+  });
+}
+
+function showReview(review, statusText) {
+  const card = $("reviewCard");
+  if (!card) return;
+  const statusEl = $("reviewStatus");
+  // 完成页始终显示反馈区；没有数据时用兜底文案，不再 hidden 整块
+  const fallback = {
+    summary: currentLang === "en"
+      ? "You finished the problem. Here is quick feedback."
+      : "这道题你已经做完了。下面是针对过程的反馈与建议。",
+    strengths: [currentLang === "en" ? "You completed the guided problem." : "能跟着引导把整道题做完。"],
+    improvements: [currentLang === "en" ? "Try stating the key property before calculating." : "关键步骤可以先说出用到的性质/定理。"],
+    suggestions: [currentLang === "en" ? "Practice a similar problem next." : "可以再练一道同类题巩固。"],
+  };
+  const data = review && typeof review === "object" ? review : fallback;
+  const summary = (data.summary || fallback.summary).trim();
+  const strengths = (data.strengths && data.strengths.length) ? data.strengths : fallback.strengths;
+  const improvements = (data.improvements && data.improvements.length) ? data.improvements : fallback.improvements;
+  const suggestions = (data.suggestions && data.suggestions.length) ? data.suggestions : fallback.suggestions;
+
+  $("reviewSummary").textContent = summary;
+  fillReviewList($("reviewStrengths"), strengths);
+  fillReviewList($("reviewImprovements"), improvements);
+  fillReviewList($("reviewSuggestions"), suggestions);
+  card.hidden = false;
+  if (statusEl) {
+    if (statusText) {
+      statusEl.textContent = statusText;
+      statusEl.hidden = false;
+    } else {
+      statusEl.textContent = "";
+      statusEl.hidden = true;
+    }
+  }
+}
+
+async function enrichReviewIfNeeded(review) {
+  if (!sessionId) return;
+  const needsEnrich = !review || review.source === "local" || !review.summary;
+  if (!needsEnrich) return;
+  const statusEl = $("reviewStatus");
+  if (statusEl) {
+    statusEl.textContent = t("reviewLoading");
+    statusEl.hidden = false;
+  }
+  try {
+    const data = await fetchJson(`/api/ai/${sessionId}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }, 60000);
+    if (data && data.ok && data.review) {
+      showReview(data.review);
+    } else if (statusEl) {
+      statusEl.hidden = true;
+    }
+  } catch {
+    if (statusEl) statusEl.hidden = true;
+  }
+}
 
 async function openCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert(t("noCamera")); return; }
@@ -1496,7 +1603,7 @@ async function startAiGuide() {
       : t("started");
     feedback.textContent = data.feedback || t("defaultFeedback");
     feedback.className = "feedback ok";
-    if (data.completed) showDone(data.final_solution || data.message);
+    if (data.completed) showDone(data.final_solution || data.message, data.review);
   } catch (err) {
     const aborted = err && err.name === "AbortError";
     startStatus.textContent = aborted ? t("timeoutStart") : t("reqFailed");
@@ -1509,29 +1616,43 @@ async function sendReply(wantHint) {
   if (busy) return;
   const answer = answerBox.value;
   if (!wantHint && !answer.trim()) return alert(t("writeSomething"));
-  setBusy(true, t("grading"));
-  feedback.textContent = t("gradingMsg");
+  setBusy(true, wantHint ? t("thinking") : t("grading"));
+  feedback.textContent = wantHint ? t("hintLoading") : t("gradingMsg");
   feedback.className = "feedback";
   if (!wantHint) addBubble("student", answer.trim());
+  else addBubble("student", t("hintAsked"));
   try {
     const data = await fetchJson("/api/ai/reply", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      // 提示请求仍带上草稿作上下文；后端会走专用提示路径
       body: JSON.stringify({ session_id: sessionId, answer: answer, want_hint: wantHint }),
-    });
+    }, 90000);
     if (!data.ok) { feedback.textContent = data.message || t("submitFailed"); feedback.className = "feedback bad"; return; }
-    if (data.feedback) {
-      const tag = data.is_correct === true ? "ok" : data.is_correct === false ? "bad" : "";
-      feedback.textContent = data.feedback;
-      feedback.className = "feedback " + tag;
+
+    if (wantHint) {
+      const hintText = (data.hint || data.message || data.feedback || "").trim();
+      if (hintText) addBubble("hint", t("hintPrefix") + hintText);
+      if (data.message && data.message.trim() && data.message.trim() !== hintText) {
+        addBubble("ai", data.message);
+      }
+      feedback.textContent = data.feedback || hintText || t("hintReady");
+      feedback.className = "feedback ok";
+    } else {
+      if (data.feedback) {
+        const tag = data.is_correct === true ? "ok" : data.is_correct === false ? "bad" : "";
+        feedback.textContent = data.feedback;
+        feedback.className = "feedback " + tag;
+      }
+      if (data.message) addBubble("ai", data.message);
+      if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
+      answerBox.value = "";
     }
-    if (data.message) addBubble("ai", data.message);
-    if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
+
     if (data.figure_svg || data.figure_data) {
       addFigureBubble(data.figure_svg, data.figure_caption || "", data.figure_data || null);
     }
-    if (!wantHint) answerBox.value = "";
-    if (data.completed) showDone(data.final_solution || data.message);
+    if (data.completed && !wantHint) showDone(data.final_solution || data.message, data.review);
   } catch (err) {
     const aborted = err && err.name === "AbortError";
     feedback.textContent = aborted ? t("timeoutReply") : t("reqFailedRetry");
@@ -1539,10 +1660,22 @@ async function sendReply(wantHint) {
   } finally { setBusy(false); }
 }
 
-function showDone(solution) {
+function showDone(solution, review) {
   guidePanel.hidden = true;
   donePanel.hidden = false;
   finalWriteup.textContent = solution || "";
+  // 完成页 = 反馈建议 + 完整解答（缺一不可）
+  const fallback = review || {
+    summary: currentLang === "en"
+      ? "You finished the problem. Here is quick feedback."
+      : "这道题你已经做完了。下面是针对过程的反馈与建议。",
+    strengths: [currentLang === "en" ? "You completed the guided problem." : "能跟着引导把整道题做完。"],
+    improvements: [currentLang === "en" ? "Try stating the key property before calculating." : "关键步骤可以先说出用到的性质/定理。"],
+    suggestions: [currentLang === "en" ? "Practice a similar problem next." : "可以再练一道同类题巩固。"],
+    source: "local",
+  };
+  showReview(fallback, fallback.source === "local" ? t("reviewLoading") : "");
+  enrichReviewIfNeeded(fallback);
 }
 
 // ===== Workbench tools =====

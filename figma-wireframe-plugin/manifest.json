@@ -1,0 +1,11 @@
+{
+  "name": "Triangle Guide Wireframe v2",
+  "id": "triangle-guide-wireframe-v2",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["none"]
+  }
+}

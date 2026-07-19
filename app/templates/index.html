@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AI 解题引导 · Math Tutor</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=20260719c" />
 </head>
 <body>
   <div class="page">
@@ -107,16 +107,48 @@
     </section>
 
     <section class="panel" id="donePanel" hidden>
+      <p class="done-banner" data-i18n="doneBanner">本题已完成 · 下面是反馈建议，以及完整解答</p>
+
+      <!-- 默认不 hidden：只要打开完成页就能看到反馈区（避免旧 JS 缓存导致整块消失） -->
+      <div id="reviewCard" class="review-card">
+        <h2 data-i18n="reviewTitle">做题反馈与建议</h2>
+        <p id="reviewStatus" class="review-status meta" hidden></p>
+        <p id="reviewSummary" class="review-summary">做完后这里会显示针对你解题过程的反馈与建议。</p>
+        <div class="review-cols">
+          <div class="review-block">
+            <h4 data-i18n="reviewStrengths">做得好的地方</h4>
+            <ul id="reviewStrengths">
+              <li>能跟着引导把整道题做完。</li>
+            </ul>
+          </div>
+          <div class="review-block">
+            <h4 data-i18n="reviewImprovements">可以改进</h4>
+            <ul id="reviewImprovements">
+              <li>关键步骤可以先说出用到的性质/定理。</li>
+            </ul>
+          </div>
+        </div>
+        <div class="review-block review-suggest">
+          <h4 data-i18n="reviewSuggestions">建议与下一步</h4>
+          <ul id="reviewSuggestions">
+            <li>可以再练一道同类题巩固。</li>
+          </ul>
+        </div>
+      </div>
+
       <h2 data-i18n="fullSolution">完整解答</h2>
       <pre id="finalWriteup" class="writeup"></pre>
-      <button type="button" id="btnCopy" class="btn primary" data-i18n="copy">复制全文</button>
+
+      <div class="actions done-actions">
+        <button type="button" id="btnCopy" class="btn primary" data-i18n="copy">复制全文（含反馈）</button>
+      </div>
     </section>
 
     <footer class="foot" data-i18n="footer">
       由 DeepSeek 提供解题引导 · 每次只推进一步，鼓励你自己思考
     </footer>
   </div>
-  <script src="/static/solid3d.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/solid3d.js?v=20260719c"></script>
+  <script src="/static/app.js?v=20260719c"></script>
 </body>
 </html>
