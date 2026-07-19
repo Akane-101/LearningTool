@@ -3,18 +3,39 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>解三角形</title>
+  <title>PathSolve 向解</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Inter:wght@500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260719h" />
+  <link rel="stylesheet" href="/static/style.css?v=20260719p" />
 </head>
 <body>
+  <div class="splash" id="splash" role="dialog" aria-label="开场动画">
+    <button type="button" class="splash-skip" id="splashSkip">跳过</button>
+    <div class="splash-inner">
+      <div class="splash-logo-wrap">
+        <div class="splash-orbit" aria-hidden="true">
+          <span class="s1">+</span>
+          <span class="s2">÷</span>
+          <span class="s3">√</span>
+        </div>
+        <img class="splash-logo" src="/static/figma-page1/mascot-home.png" alt="PathSolve" width="360" height="360" />
+      </div>
+      <div class="splash-brand">
+        <h2 data-i18n="brandName">PathSolve 向解</h2>
+        <p data-i18n="title">渐进引导，向解而生</p>
+      </div>
+      <div class="splash-bar" aria-hidden="true"><i></i></div>
+    </div>
+  </div>
+
   <div class="shell">
     <aside class="sidebar">
-      <div class="side-logo" aria-hidden="true">
-        <img src="/static/figma-page1/logo-sidebar.png" alt="" />
-      </div>
+      <button type="button" class="side-logo" id="btnReplaySplash" data-i18n-title="logoReplayTip" title="点击重播开场" aria-label="点击重播开场">
+        <span class="side-logo-ring" aria-hidden="true"></span>
+        <img src="/static/figma-page1/logo-sidebar.png" alt="PathSolve" />
+        <span class="side-logo-tip" data-i18n="logoReplayTip">点击重播开场</span>
+      </button>
       <div class="side-mid">
         <!-- 上方：切换语言 · 中文高亮「文」，英文高亮「A」 -->
         <button type="button" class="side-btn lang-switch" id="btnLangToggle" title="切换语言" aria-label="切换语言">
@@ -42,7 +63,7 @@
         <section class="screen active" id="screen-home">
           <div class="home-center">
             <img class="home-mascot" src="/static/figma-page1/mascot-home.png" alt="" />
-            <p class="home-greet" data-i18n-html="homeGreet">早上好，<br />今天想学点什么？</p>
+            <p class="home-greet" data-i18n-html="homeGreet"><span class="greet-line">早上好，</span><br /><span class="greet-line">今天想学点什么？</span></p>
             <div class="home-entries">
               <div class="home-entry-wrap">
                 <span class="home-entry-label" data-i18n="entrySearch">搜索题目</span>
@@ -123,7 +144,7 @@
           </div>
           <div class="samples" id="samples"></div>
           <h2 class="section-title" data-i18n="workbenchTitle">画板</h2>
-          <div class="board">
+          <div class="board" id="boardGuide">
             <div class="board-tabs">
               <button type="button" id="toolBgFigure" class="tab active" data-i18n="toolBgFigure">示意图</button>
               <button type="button" id="toolBgPhoto" class="tab" data-i18n="toolBgPhoto" hidden>叠加原图</button>
@@ -160,16 +181,20 @@
 
         <!-- 完整解答 / 反馈 -->
         <section class="screen" id="donePanel" hidden>
-          <div class="page-head">
+          <div class="done-celebrate" id="doneCelebrate" aria-hidden="true">
+            <span class="done-check">✓</span>
+            <i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <div class="page-head done-anim">
             <button type="button" class="btn-back" data-back title="返回" aria-label="返回">
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6 9 12l6 6"/></svg>
               <span data-i18n="back">返回</span>
             </button>
             <h1 class="page-title" data-i18n="fullSolution">完整解答</h1>
           </div>
-          <pre id="finalWriteup" class="writeup-light"></pre>
-          <h2 class="section-title" data-i18n="reviewTitleShort">做题反馈</h2>
-          <div id="reviewCard" class="review-panel">
+          <pre id="finalWriteup" class="writeup-light done-anim"></pre>
+          <h2 class="section-title done-anim" data-i18n="reviewTitleShort">做题反馈</h2>
+          <div id="reviewCard" class="review-panel done-anim">
             <p id="reviewStatus" class="review-status meta" hidden></p>
             <p id="reviewSummary" class="review-summary">做完后这里会显示针对你解题过程的反馈与建议。</p>
             <div class="review-cols">
@@ -228,7 +253,7 @@
     </div>
   </div>
 
-  <script src="/static/solid3d.js?v=20260719h"></script>
-  <script src="/static/app.js?v=20260719h"></script>
+  <script src="/static/solid3d.js?v=20260719p"></script>
+  <script src="/static/app.js?v=20260719p"></script>
 </body>
 </html>

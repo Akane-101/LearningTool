@@ -20,14 +20,15 @@ const GEO_H = 280;
 
 const I18N = {
   zh: {
-    brandName: "解三角形",
-    title: "AI 带你一步一步解题",
+    brandName: "PathSolve 向解",
+    title: "渐进引导，向解而生",
     subtitle: "平面/立体几何 · 拍照看图 · 根据题目生成示意图 · DeepSeek 逐步引导",
     homeTitle: "首页",
     searchTitle: "搜索题目",
     guideTitle: "快速练习",
     doneTitle: "完整解答",
-    homeGreet: "早上好，<br />今天想学点什么？",
+    homeGreet: "<span class=\"greet-line\">早上好，</span><br /><span class=\"greet-line\">今天想学点什么？</span>",
+    logoReplayTip: "点击重播开场",
     entrySearch: "搜索题目",
     entrySearchDesc: "拍照 / 上传 / 粘贴截图，自动识字与描摹几何图",
     entryPractice: "快速练习",
@@ -132,14 +133,15 @@ const I18N = {
     answerLabel: "你的回答",
   },
   en: {
-    brandName: "Triangle Guide",
-    title: "AI Guides You Step by Step",
+    brandName: "PathSolve",
+    title: "Guided step by step, made to solve",
     subtitle: "Plane & solid geometry · photo · auto figure · DeepSeek guides",
     homeTitle: "Home",
     searchTitle: "Search Problems",
     guideTitle: "Quick Practice",
     doneTitle: "Full Solution",
-    homeGreet: "Good morning,<br />What would you like to learn today?",
+    homeGreet: "<span class=\"greet-line\">Good morning,</span><br /><span class=\"greet-line\">What would you like to learn today?</span>",
+    logoReplayTip: "Click to replay intro",
     entrySearch: "Search Problems",
     entrySearchDesc: "Photo / upload / paste a screenshot — OCR and geometry tracing",
     entryPractice: "Quick Practice",
@@ -318,6 +320,7 @@ function showScreen(name, opts) {
     name = sessionId ? "guide" : "home";
   }
 
+  const prevScreen = currentScreen;
   if (!options.replace && currentScreen && currentScreen !== name) {
     screenHistory.push(currentScreen);
     if (screenHistory.length > 12) screenHistory.shift();
@@ -357,7 +360,28 @@ function showScreen(name, opts) {
   if (name === "guide") {
     requestAnimationFrame(() => {
       try { resizeCanvas(); } catch (_) { /* not ready */ }
+      playBoardAppear();
     });
+  }
+
+  // 搜题 / 引导 / 完成：面板轻入场
+  if (name !== "home" && prevScreen !== name) {
+    const target = screens[name];
+    if (target) requestAnimationFrame(() => playScreenEnter(target));
+  }
+  if (name === "search" && prevScreen !== "search") {
+    requestAnimationFrame(playBoardAppear);
+  }
+  if (name === "done" && prevScreen !== "done") {
+    requestAnimationFrame(playDoneEnter);
+  }
+
+  // 回到首页且开场已结束时，重播首页入场
+  if (name === "home" && prevScreen !== "home") {
+    const splash = $("splash");
+    if (!splash || splash.classList.contains("is-done")) {
+      requestAnimationFrame(playHomeEnter);
+    }
   }
 }
 
@@ -415,7 +439,9 @@ function applyLang() {
   }
   if (!busy) btnStart.textContent = t("confirm");
   document.querySelectorAll("[data-i18n-title]").forEach((el) => {
-    el.title = t(el.getAttribute("data-i18n-title"));
+    const tip = t(el.getAttribute("data-i18n-title"));
+    el.title = tip;
+    if (el.id === "btnReplaySplash") el.setAttribute("aria-label", tip);
   });
 }
 
@@ -905,7 +931,7 @@ function addBubble(role, text) {
   div.className = "bubble " + role;
   div.textContent = text;
   chatLog.appendChild(div);
-  chatLog.scrollTop = chatLog.scrollHeight;
+  requestAnimationFrame(() => { chatLog.scrollTop = chatLog.scrollHeight; });
 }
 
 function addFigureBubble(svg, caption, figureData) {
@@ -923,9 +949,60 @@ function addFigureBubble(svg, caption, figureData) {
     box.innerHTML = svg;
     wrap.appendChild(box);
     chatLog.appendChild(wrap);
-    chatLog.scrollTop = chatLog.scrollHeight;
+    requestAnimationFrame(() => { chatLog.scrollTop = chatLog.scrollHeight; });
   }
   showWorkbench(svg, figureData);
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function replayAnimClass(el, cls, clearMs) {
+  if (!el) return;
+  el.classList.remove(cls);
+  if (prefersReducedMotion()) return;
+  void el.offsetWidth;
+  el.classList.add(cls);
+  if (clearMs) {
+    clearTimeout(el._animClear);
+    el._animClear = setTimeout(() => el.classList.remove(cls), clearMs);
+  }
+}
+
+function playHomeEnter() {
+  const home = $("screen-home");
+  if (!home) return;
+  home.classList.remove("home-enter");
+  void home.offsetWidth;
+  home.classList.add("home-enter");
+}
+
+function playScreenEnter(el) {
+  replayAnimClass(el, "screen-enter", 450);
+}
+
+function playBoardAppear() {
+  ["boardGuide", "boardSearch"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    const host = el.closest(".screen") || el;
+    if (host.hidden) return;
+    replayAnimClass(el, "board-appear", 550);
+  });
+}
+
+function pulseHintBtn() {
+  replayAnimClass($("btnHint"), "hint-pulse", 600);
+}
+
+function popFeedback() {
+  replayAnimClass($("feedback"), "pop", 400);
+}
+
+function playDoneEnter() {
+  // 保留 done-enter，避免庆祝对勾在动画结束后又被藏掉
+  replayAnimClass(donePanel, "done-enter");
 }
 
 function cloneFigure(fig) {
@@ -1016,8 +1093,10 @@ function showWorkbench(svg, figureData) {
   }
   const wb = $("workbench");
   if (!wb) return;
+  const wasHidden = wb.hidden;
   wb.hidden = false;
   syncWorkbenchEmpty();
+  if (wasHidden) playBoardAppear();
 
   if (isSolidFigure(latestFigureData)) {
     bgMode = "figure";
@@ -1844,7 +1923,10 @@ async function startAiGuide() {
     showScreen("guide", { force: true });
     syncWorkbenchEmpty();
     addBubble("ai", data.message || t("aiStart"));
-    if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
+    if (data.hint) {
+      addBubble("hint", t("hintPrefix") + data.hint);
+      pulseHintBtn();
+    }
     if (data.figure_svg || data.figure_data) {
       addFigureBubble(data.figure_svg, data.figure_caption || "", data.figure_data || null);
     } else if (currentVisionFigure) {
@@ -1861,6 +1943,7 @@ async function startAiGuide() {
       : t("started");
     feedback.textContent = data.feedback || t("defaultFeedback");
     feedback.className = "feedback ok";
+    popFeedback();
     if (data.completed) showDone(data.final_solution || data.message, data.review);
   } catch (err) {
     const aborted = err && err.name === "AbortError";
@@ -1896,14 +1979,20 @@ async function sendReply(wantHint) {
       }
       feedback.textContent = data.feedback || hintText || t("hintReady");
       feedback.className = "feedback ok";
+      popFeedback();
+      pulseHintBtn();
     } else {
       if (data.feedback) {
         const tag = data.is_correct === true ? "ok" : data.is_correct === false ? "bad" : "";
         feedback.textContent = data.feedback;
         feedback.className = "feedback " + tag;
+        if (tag) popFeedback();
       }
       if (data.message) addBubble("ai", data.message);
-      if (data.hint) addBubble("hint", t("hintPrefix") + data.hint);
+      if (data.hint) {
+        addBubble("hint", t("hintPrefix") + data.hint);
+        pulseHintBtn();
+      }
       answerBox.value = "";
     }
 
@@ -1995,8 +2084,70 @@ if (langToggle) {
   });
 }
 
+let splashTimer = null;
+let logoTipTimer = null;
+let logoTipShownOnce = false;
+
+function nudgeLogoTip() {
+  const logo = $("btnReplaySplash");
+  if (!logo || logoTipShownOnce) return;
+  logoTipShownOnce = true;
+  logo.classList.add("tip-on");
+  if (logoTipTimer) clearTimeout(logoTipTimer);
+  logoTipTimer = setTimeout(() => {
+    logo.classList.remove("tip-on");
+    logoTipTimer = null;
+  }, 3200);
+}
+
+function endSplash() {
+  const splash = $("splash");
+  if (splash) splash.classList.add("is-done");
+  if (splashTimer) {
+    clearTimeout(splashTimer);
+    splashTimer = null;
+  }
+  playHomeEnter();
+  // 开场结束后轻提示：侧栏 Logo 可重播
+  setTimeout(nudgeLogoTip, 280);
+}
+
+function playSplash() {
+  const splash = $("splash");
+  if (!splash) return;
+  const logo = $("btnReplaySplash");
+  if (logo) {
+    logo.classList.remove("tip-on");
+    logo.classList.add("is-press");
+    setTimeout(() => logo.classList.remove("is-press"), 140);
+  }
+  const home = $("screen-home");
+  if (home) home.classList.remove("home-enter");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  splash.classList.remove("is-done");
+  splash.querySelectorAll(".splash-logo-wrap, .splash-logo, .splash-orbit span, .splash-brand h2, .splash-brand p, .splash-bar, .splash-bar i")
+    .forEach((el) => {
+      el.style.animation = "none";
+      void el.offsetWidth;
+      el.style.animation = "";
+    });
+  if (splashTimer) clearTimeout(splashTimer);
+  splashTimer = setTimeout(endSplash, reduced ? 400 : 2800);
+}
+
+const splashSkip = $("splashSkip");
+if (splashSkip) splashSkip.addEventListener("click", endSplash);
+
+const btnReplaySplash = $("btnReplaySplash");
+if (btnReplaySplash) {
+  btnReplaySplash.addEventListener("click", () => {
+    playSplash();
+  });
+}
+
 applyLang();
 showScreen("home", { force: true });
+playSplash();
 syncWorkbenchEmpty();
 syncSearchBoardPreview();
 syncPhotoToolsVisibility();

@@ -26,8 +26,8 @@ from .ai_guide import (
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
-    title="解三角形 AI 引导",
-    description="DeepSeek 逐步引导初中生解三角形角度题",
+    title="PathSolve 向解",
+    description="PathSolve · AI 逐步引导几何解题",
     version="0.3.1",
 )
 
