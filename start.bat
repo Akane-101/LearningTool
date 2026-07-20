@@ -43,7 +43,8 @@ echo [4/4] 等待服务就绪...
 set /a _tries=0
 :wait_loop
 set /a _tries+=1
-powershell -NoProfile -Command "try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8001/api/health' -UseBasicParsing -TimeoutSec 1; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+REM 用 venv 里的 Python 探测（不依赖系统 powershell 是否在 PATH）
+".venv\Scripts\python.exe" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/api/health', timeout=1).read()" >nul 2>&1
 if %errorlevel%==0 goto ready
 if %_tries% geq 40 (
   echo.

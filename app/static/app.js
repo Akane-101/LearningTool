@@ -37,7 +37,9 @@ const I18N = {
     guideMeta: "逐步推进",
     boardEmpty: "选一道题开始后，画板会出现在这里",
     boardEmptySearch: "上传题目后，几何示意图会出现在这里",
-    dropHintShort: "拖拽 / 粘贴题目图片到这里",
+    dropHintShort: "图片预览会出现在这里",
+    previewZoomTip: "点击查看大图",
+    closePreview: "关闭",
     confirm: "确认",
     reviewTitleShort: "做题反馈",
     back: "返回",
@@ -45,7 +47,11 @@ const I18N = {
     step1: "1. 输入题目",
     dropTitle: "把题目图片拖到这里，或按 Ctrl+V 粘贴截图",
     dropHint: "也支持手机拍照、相册选图",
-    upload: "上传图片",
+    upload: "上传",
+    uploadLocal: "本地图片",
+    uploadHelp: "支持拖拽或点击上传题目图片，也可粘贴截图",
+    uploadFormats: "当前支持的图片格式",
+    uploadFormatsTip: "JPG、PNG、WEBP、GIF",
     takePhoto: "拍照",
     openCamera: "打开摄像头",
     snap: "拍照识别",
@@ -54,7 +60,7 @@ const I18N = {
     problemPlaceholder: "拍照或粘贴图片后这里会自动填入文字；也可以直接打字/粘贴。\n如果你已经写了一部分解题过程，直接贴在这里，AI 会接着你的思路继续。",
     startGuide: "确认",
     step2: "AI 引导",
-    answerPlaceholder: "写下你的答案或思路",
+    answerPlaceholder: "写下你的答案或思路（Enter 发送，Ctrl+Enter 换行）",
     hint: "卡住了，提示一下",
     hintAsked: "（我卡住了，想要一个提示）",
     hintLoading: "正在想提示…",
@@ -152,7 +158,9 @@ const I18N = {
     guideMeta: "Step by step",
     boardEmpty: "Pick a sample to start — the board appears here",
     boardEmptySearch: "Upload a problem — the diagram appears here",
-    dropHintShort: "Drag / paste a problem image here",
+    dropHintShort: "Image preview will appear here",
+    previewZoomTip: "Click to enlarge",
+    closePreview: "Close",
     confirm: "Confirm",
     reviewTitleShort: "Feedback",
     back: "Back",
@@ -163,6 +171,10 @@ const I18N = {
     dropTitle: "Drag an image here, or press Ctrl+V to paste a screenshot",
     dropHint: "Also supports phone camera and photo gallery",
     upload: "Upload",
+    uploadLocal: "From device",
+    uploadHelp: "Drag & drop or click to upload a problem image. You can also paste a screenshot.",
+    uploadFormats: "Supported image formats",
+    uploadFormatsTip: "JPG, PNG, WEBP, GIF",
     takePhoto: "Take Photo",
     openCamera: "Open Camera",
     snap: "Snap & Recognize",
@@ -171,7 +183,7 @@ const I18N = {
     problemPlaceholder: "After photo/paste, text appears here; you can also type directly.\nIf you've already written part of the solution, paste it here and AI will continue from your reasoning.",
     startGuide: "Confirm",
     step2: "AI Guidance",
-    answerPlaceholder: "Write your answer or thoughts",
+    answerPlaceholder: "Write your answer (Enter send, Ctrl+Enter newline)",
     hint: "I'm stuck, give me a hint",
     hintAsked: "(I'm stuck — please give a hint)",
     hintLoading: "Thinking of a hint…",
@@ -587,6 +599,10 @@ function showScreen(name, opts) {
     }
   }
 
+  if (name === "search" || name === "guide") {
+    placeWorkbenchForScreen(name);
+  }
+
   if (name === "guide") {
     requestAnimationFrame(() => {
       try { resizeCanvas(); } catch (_) { /* not ready */ }
@@ -628,21 +644,32 @@ function syncWorkbenchEmpty() {
   const photo = $("photoLayer");
   const hasPhoto = !!(photo && !photo.hidden && photo.getAttribute("src"));
   empty.hidden = hasSvg || hasSolid || hasPhoto;
+  // 搜索页 / 练习页空态文案不同
+  const key = currentScreen === "guide" ? "boardEmpty" : "boardEmptySearch";
+  empty.setAttribute("data-i18n", key);
+  empty.textContent = t(key);
+}
+
+/** 画板在搜索页与练习页之间共用同一套 DOM */
+function placeWorkbenchForScreen(name) {
+  const bundle = $("workbenchBundle");
+  if (!bundle) return;
+  const mountId = name === "guide" ? "workbenchMountGuide" : "workbenchMountSearch";
+  const mount = $(mountId);
+  if (!mount) return;
+  if (bundle.parentElement !== mount) mount.appendChild(bundle);
+  syncWorkbenchEmpty();
+  requestAnimationFrame(() => {
+    resizeCanvas();
+    syncBgMode();
+    if (window.Solid3D && typeof Solid3D.resize === "function") Solid3D.resize();
+  });
 }
 
 function syncSearchBoardPreview() {
-  const img = $("searchBoardPreview");
-  const hint = $("searchBoardHint");
-  if (!img) return;
-  if (currentImageBase64) {
-    img.src = `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
-    img.hidden = false;
-    if (hint) hint.hidden = true;
-  } else {
-    img.removeAttribute("src");
-    img.hidden = true;
-    if (hint) hint.hidden = false;
-  }
+  // 兼容旧调用：搜索页已改用共享画板，不再用原图冒充示意图
+  placeWorkbenchForScreen(currentScreen === "guide" ? "guide" : "search");
+  syncWorkbenchEmpty();
 }
 
 // ===== Language switcher =====
@@ -700,26 +727,39 @@ function renderSamples() {
 btnLangZh.addEventListener("click", () => { currentLang = "zh"; applyLang(); });
 btnLangEn.addEventListener("click", () => { currentLang = "en"; applyLang(); });
 
-fileInput.addEventListener("change", (e) => {
-  const file = e.target.files && e.target.files[0];
-  if (file) handleImageFile(file);
-  e.target.value = "";
-});
+function pickLocalImage() {
+  const input = $("fileInput");
+  if (input) input.click();
+}
 
-cameraInput.addEventListener("change", (e) => {
-  const file = e.target.files && e.target.files[0];
-  if (file) handleImageFile(file);
-  e.target.value = "";
-});
+if (fileInput) {
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) handleImageFile(file);
+    e.target.value = "";
+  });
+}
 
-dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("dragover"); });
-dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
-dropZone.addEventListener("drop", (e) => {
-  e.preventDefault();
-  dropZone.classList.remove("dragover");
-  const file = e.dataTransfer.files && e.dataTransfer.files[0];
-  if (file && file.type.startsWith("image/")) handleImageFile(file);
-});
+function bindImageDropTarget(el) {
+  if (!el) return;
+  el.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    el.classList.add("dragover");
+  });
+  el.addEventListener("dragleave", (e) => {
+    if (e.relatedTarget && el.contains(e.relatedTarget)) return;
+    el.classList.remove("dragover");
+  });
+  el.addEventListener("drop", (e) => {
+    e.preventDefault();
+    el.classList.remove("dragover");
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file && file.type.startsWith("image/")) handleImageFile(file);
+  });
+}
+
+bindImageDropTarget(dropZone);
+bindImageDropTarget($("previewCard"));
 
 document.addEventListener("paste", (e) => {
   const items = e.clipboardData && e.clipboardData.items;
@@ -734,10 +774,27 @@ document.addEventListener("paste", (e) => {
   }
 });
 
-btnOpenCamera.addEventListener("click", openCamera);
+const btnUploadMain = $("btnUploadMain");
+const btnTakePhoto = $("btnTakePhoto");
+if (btnUploadMain) btnUploadMain.addEventListener("click", pickLocalImage);
+if (btnTakePhoto) btnTakePhoto.addEventListener("click", openCamera);
 btnCloseCamera.addEventListener("click", closeCamera);
 btnSnap.addEventListener("click", snapFromCamera);
-$("btnClearImage").addEventListener("click", clearCurrentImage);
+$("btnClearImage").addEventListener("click", (e) => {
+  e.stopPropagation();
+  clearCurrentImage();
+});
+const btnOpenPreview = $("btnOpenPreview");
+if (btnOpenPreview) btnOpenPreview.addEventListener("click", openPreviewLightbox);
+const btnCloseLightbox = $("btnCloseLightbox");
+const btnCloseLightboxX = $("btnCloseLightboxX");
+if (btnCloseLightbox) btnCloseLightbox.addEventListener("click", closePreviewLightbox);
+if (btnCloseLightboxX) btnCloseLightboxX.addEventListener("click", closePreviewLightbox);
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const box = $("imgLightbox");
+  if (box && !box.hidden) closePreviewLightbox();
+});
 $("btnClearText").addEventListener("click", clearProblemText);
 if ($("btnVoiceProblem")) {
   $("btnVoiceProblem").addEventListener("click", () => toggleVoiceInput("problem"));
@@ -748,6 +805,42 @@ if ($("btnVoiceAnswer")) {
 btnStart.addEventListener("click", startAiGuide);
 btnSubmit.addEventListener("click", () => sendReply(false));
 btnHint.addEventListener("click", () => sendReply(true));
+
+const ANSWER_BOX_MIN_PX = 36;
+const ANSWER_BOX_MAX_PX = 148;
+function resizeAnswerBox() {
+  const box = answerBox;
+  if (!box) return;
+  const bar = box.closest(".answer-bar");
+  box.style.height = "auto";
+  const next = Math.min(Math.max(box.scrollHeight, ANSWER_BOX_MIN_PX), ANSWER_BOX_MAX_PX);
+  box.style.height = `${next}px`;
+  if (bar) bar.classList.toggle("is-tall", next > ANSWER_BOX_MIN_PX + 4);
+}
+
+if (answerBox) {
+  // Enter 发送；Ctrl+Enter（或 Cmd+Enter）换行并增高
+  answerBox.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    if (e.isComposing || e.keyCode === 229) return; // 中文输入法组字中
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const start = answerBox.selectionStart;
+      const end = answerBox.selectionEnd;
+      const val = answerBox.value;
+      answerBox.value = `${val.slice(0, start)}\n${val.slice(end)}`;
+      const pos = start + 1;
+      answerBox.selectionStart = pos;
+      answerBox.selectionEnd = pos;
+      resizeAnswerBox();
+      return;
+    }
+    e.preventDefault();
+    if (!btnSubmit.disabled) sendReply(false);
+  });
+  answerBox.addEventListener("input", resizeAnswerBox);
+  resizeAnswerBox();
+}
 
 btnCopy.addEventListener("click", async () => {
   const parts = [finalWriteup.textContent || ""];
@@ -874,12 +967,46 @@ async function snapFromCamera() {
   await handleImageFile(new File([blob], "camera.jpg", { type: "image/jpeg" }));
 }
 
+let previewObjectUrl = null;
+
 function showPreview(file) {
+  if (previewObjectUrl) {
+    URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
   const url = URL.createObjectURL(file);
-  preview.src = url; preview.hidden = false;
+  previewObjectUrl = url;
+  preview.src = url;
+  const openBtn = $("btnOpenPreview");
+  if (openBtn) openBtn.hidden = false;
   const dropHint = $("dropHintText");
   if (dropHint) dropHint.hidden = true;
-  preview.onload = () => URL.revokeObjectURL(url);
+}
+
+function getPreviewSrc() {
+  if (currentImageBase64) {
+    return `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
+  }
+  return (preview && preview.src) || "";
+}
+
+function openPreviewLightbox() {
+  const src = getPreviewSrc();
+  if (!src) return;
+  const box = $("imgLightbox");
+  const img = $("lightboxImg");
+  if (!box || !img) return;
+  img.src = src;
+  box.hidden = false;
+  document.body.style.overflow = "hidden";
+}
+
+function closePreviewLightbox() {
+  const box = $("imgLightbox");
+  const img = $("lightboxImg");
+  if (box) box.hidden = true;
+  if (img) img.removeAttribute("src");
+  document.body.style.overflow = "";
 }
 
 // ===== 语音输入（Web Speech API，Chrome / Edge）=====
@@ -1080,19 +1207,33 @@ function clearCurrentImage() {
   currentImageMime = null;
   currentGeometryDescription = "";
   currentVisionFigure = null;
-  preview.src = "";
-  preview.hidden = true;
+  closePreviewLightbox();
+  if (previewObjectUrl) {
+    URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = null;
+  }
+  preview.removeAttribute("src");
+  const openBtn = $("btnOpenPreview");
+  if (openBtn) openBtn.hidden = true;
   const dropHint = $("dropHintText");
   if (dropHint) dropHint.hidden = false;
   ocrStatus.textContent = t("imageCleared");
   ocrStatus.classList.remove("bad");
   if ($("fileInput")) $("fileInput").value = "";
-  if ($("cameraInput")) $("cameraInput").value = "";
   const photo = $("photoLayer");
   if (photo) {
     photo.removeAttribute("src");
     photo.hidden = true;
   }
+  const fig = $("figureLayer");
+  if (fig) fig.innerHTML = "";
+  latestFigureData = null;
+  latestFigureSvg = null;
+  geoBaseline = null;
+  geoState = null;
+  currentVisionFigure = null;
+  currentGeometryDescription = "";
+  unmountSolidWorkbench();
   if (bgMode === "overlay" || bgMode === "photo") bgMode = "figure";
   syncPhotoToolsVisibility();
   syncBgMode();
@@ -1160,9 +1301,17 @@ async function handleImageFile(file) {
     let status = data.message || t("ocrDone");
     if (data.vision_ok && currentVisionFigure) {
       status += " · " + t("visionOk");
+      placeWorkbenchForScreen("search");
+      bgMode = "figure"; // 搜索页默认显示示意图，而不是原图
       showWorkbench(null, currentVisionFigure);
     } else if (!data.vision_ok) {
       ocrStatus.classList.add("bad");
+      // 看图失败时仍可在画板看原图
+      if (currentImageBase64) {
+        placeWorkbenchForScreen("search");
+        bgMode = "photo";
+        showWorkbench(null, null);
+      }
     }
     ocrStatus.textContent = status;
     playSfx("ok");
@@ -1294,7 +1443,7 @@ function setWorkbenchHint(solid) {
 }
 
 const MOVE_ICON_SVG =
-  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4l7 16 2-7 7-2L4 4z"/></svg>';
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3.2v17.2l5-4.5 3.6 7.1 2.6-1.3-3.6-7.1H19.5Z"/></svg>';
 
 function setToolTip(btn, tip) {
   if (!btn) return;
@@ -1397,8 +1546,10 @@ function showWorkbench(svg, figureData) {
 
   unmountSolidWorkbench();
 
-  // 有原题照片时默认叠加：矢量描摹叠在原图上
-  if (currentImageBase64 && bgMode !== "photo") bgMode = "overlay";
+  // 搜索页优先示意图；练习页有原图时默认叠加描摹
+  if (currentImageBase64 && bgMode !== "photo" && bgMode !== "figure") {
+    bgMode = currentScreen === "search" ? "figure" : "overlay";
+  }
   syncPhotoToolsVisibility();
 
   if (latestFigureData || latestFigureSvg) {
@@ -1418,7 +1569,8 @@ function showWorkbench(svg, figureData) {
       }
       syncWorkbenchEmpty();
     };
-    photo.src = `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
+    const want = `data:${currentImageMime || "image/jpeg"};base64,${currentImageBase64}`;
+    if (photo.getAttribute("src") !== want) photo.src = want;
   }
 }
 
@@ -2214,6 +2366,7 @@ async function startAiGuide() {
     if (data.figure_data) currentVisionFigure = data.figure_data;
     chatLog.innerHTML = "";
     answerBox.value = "";
+    resizeAnswerBox();
     showScreen("guide", { force: true });
     syncWorkbenchEmpty();
     addBubble("ai", data.message || t("aiStart"));
@@ -2298,6 +2451,7 @@ async function sendReply(wantHint) {
         pulseHintBtn();
       }
       answerBox.value = "";
+      resizeAnswerBox();
     }
 
     if (data.figure_svg || data.figure_data) {
