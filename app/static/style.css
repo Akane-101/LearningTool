@@ -351,6 +351,11 @@ html, body {
 }
 .side-btn:hover { background: #f3f6fb; }
 .side-btn .home-icon { display: block; }
+.sfx-mute .sfx-icon { display: block; }
+.sfx-mute .sfx-off { display: none; }
+.sfx-mute.is-muted .sfx-on { display: none; }
+.sfx-mute.is-muted .sfx-off { display: block; }
+.sfx-mute.is-muted { color: #9aa8c0; }
 
 /* 文 / A 语言图标 */
 .lang-switch .lang-glyph {

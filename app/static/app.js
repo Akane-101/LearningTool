@@ -131,6 +131,8 @@ const I18N = {
     voiceNoKey: "未配置百炼 API Key（DASHSCOPE_API_KEY），语音识别不可用。",
     voiceEmpty: "没有识别出文字，请再试一次。",
     answerLabel: "你的回答",
+    sfxMute: "关闭音效",
+    sfxUnmute: "打开音效",
   },
   en: {
     brandName: "PathSolve",
@@ -244,8 +246,236 @@ const I18N = {
     voiceNoKey: "DASHSCOPE_API_KEY is not configured. Voice input unavailable.",
     voiceEmpty: "No speech detected. Please try again.",
     answerLabel: "Your answer",
+    sfxMute: "Mute sounds",
+    sfxUnmute: "Unmute sounds",
   },
 };
+
+// ===== Apple 风格轻 UI 音效（WebAudio 预解码；pointerdown 触发以降低延迟）=====
+const SFX_VER = "20260720m";
+const SFX_FILES = {
+  click: `/static/vfx/click.wav?v=${SFX_VER}`,
+  pop: `/static/vfx/pop.wav?v=${SFX_VER}`,
+  send: `/static/vfx/send.wav?v=${SFX_VER}`,
+  ok: `/static/vfx/ok.wav?v=${SFX_VER}`,
+  bad: `/static/vfx/bad.wav?v=${SFX_VER}`,
+  splash: `/static/vfx/splash.wav?v=${SFX_VER}`,
+  done: `/static/vfx/done.wav?v=${SFX_VER}`,
+  nav: `/static/vfx/nav.wav?v=${SFX_VER}`,
+  hint: `/static/vfx/hint.wav?v=${SFX_VER}`,
+  copy: `/static/vfx/copy.wav?v=${SFX_VER}`,
+  toggle: `/static/vfx/toggle.wav?v=${SFX_VER}`,
+  think: `/static/vfx/think.wav?v=${SFX_VER}`,
+};
+const SFX_VOLUME = {
+  click: 0.28,
+  pop: 0.42,
+  send: 0.45,
+  ok: 0.48,
+  bad: 0.42,
+  splash: 0.36,
+  done: 0.52,
+  nav: 0.36,
+  hint: 0.44,
+  copy: 0.42,
+  toggle: 0.4,
+  think: 0.28,
+};
+const SFX_THROTTLE_MS = 45;
+const SFX_MUTE_KEY = "pathsolve-sfx-muted";
+const SFX_CLICK_SEL = [
+  "button",
+  "a[href]",
+  "[role='button']",
+  "summary",
+  ".chip",
+  ".tab",
+  ".tool-icon",
+  ".icon-btn",
+  ".side-btn",
+  ".side-logo",
+  ".home-entry",
+  ".btn-coral",
+  ".btn-back",
+  ".linkish",
+  "label[for]",
+  "input[type='file']",
+  "input[type='checkbox']",
+  "input[type='radio']",
+].join(",");
+let sfxMuted = false;
+try { sfxMuted = localStorage.getItem(SFX_MUTE_KEY) === "1"; } catch (_) { /* ignore */ }
+let sfxCtx = null;
+let sfxMaster = null;
+const sfxBuffers = {};
+const sfxRawCache = {}; // arrayBuffer 预取，不依赖 AudioContext 解锁
+let sfxLoadPromise = null;
+const sfxLastPlay = {};
+
+function syncMuteBtn() {
+  const btn = $("btnSfxMute");
+  if (!btn) return;
+  btn.classList.toggle("is-muted", sfxMuted);
+  const tip = sfxMuted ? t("sfxUnmute") : t("sfxMute");
+  btn.title = tip;
+  btn.setAttribute("aria-label", tip);
+  btn.setAttribute("aria-pressed", sfxMuted ? "true" : "false");
+}
+
+function getSfxCtx() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!sfxCtx) {
+    sfxCtx = new AC();
+    sfxMaster = sfxCtx.createGain();
+    sfxMaster.gain.value = 1;
+    sfxMaster.connect(sfxCtx.destination);
+  }
+  if (sfxCtx.state === "suspended") {
+    sfxCtx.resume().catch(() => {});
+  }
+  return sfxCtx;
+}
+
+async function ensureSfxBuffer(name) {
+  if (sfxBuffers[name]) return sfxBuffers[name];
+  const ctx = getSfxCtx();
+  if (!ctx || !SFX_FILES[name]) return null;
+  try {
+    let raw = sfxRawCache[name];
+    if (!raw) {
+      const res = await fetch(SFX_FILES[name]);
+      raw = await res.arrayBuffer();
+      sfxRawCache[name] = raw;
+    }
+    sfxBuffers[name] = await ctx.decodeAudioData(raw.slice(0));
+    return sfxBuffers[name];
+  } catch (_) {
+    return null;
+  }
+}
+
+function preloadSfx() {
+  if (sfxLoadPromise) return sfxLoadPromise;
+  // 先并行 fetch，再解码；click / splash 优先
+  const order = ["click", "splash", ...Object.keys(SFX_FILES).filter((k) => k !== "click" && k !== "splash")];
+  sfxLoadPromise = (async () => {
+    await Promise.all(order.map(async (name) => {
+      if (sfxRawCache[name]) return;
+      try {
+        const res = await fetch(SFX_FILES[name]);
+        sfxRawCache[name] = await res.arrayBuffer();
+      } catch (_) { /* ignore */ }
+    }));
+    getSfxCtx();
+    for (const name of order) {
+      await ensureSfxBuffer(name);
+    }
+    return true;
+  })();
+  return sfxLoadPromise;
+}
+
+function setSfxMuted(muted) {
+  const next = !!muted;
+  const changed = next !== sfxMuted;
+  sfxMuted = next;
+  try { localStorage.setItem(SFX_MUTE_KEY, sfxMuted ? "1" : "0"); } catch (_) { /* ignore */ }
+  syncMuteBtn();
+  if (changed && !sfxMuted) {
+    unlockSfx();
+    playSfx("toggle");
+  }
+}
+
+function unlockSfx() {
+  const ctx = getSfxCtx();
+  if (!ctx) return;
+  // 空缓冲暖机，减少首次可闻音的管线延迟
+  try {
+    if (ctx.state === "suspended") ctx.resume();
+    const silent = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const src = ctx.createBufferSource();
+    src.buffer = silent;
+    src.connect(sfxMaster || ctx.destination);
+    src.start(0);
+  } catch (_) { /* ignore */ }
+  preloadSfx();
+}
+
+function playSfx(name) {
+  if (sfxMuted || !SFX_FILES[name]) return;
+  const now = performance.now();
+  if (sfxLastPlay[name] && now - sfxLastPlay[name] < SFX_THROTTLE_MS) return;
+  const ctx = getSfxCtx();
+  if (!ctx) return;
+  const buf = sfxBuffers[name];
+  if (!buf) {
+    // 未就绪：后台补齐，本次不延迟补播（避免“晚半拍”）
+    ensureSfxBuffer(name);
+    return;
+  }
+  const start = () => {
+    if (sfxMuted || !sfxBuffers[name]) return;
+    const t = performance.now();
+    if (sfxLastPlay[name] && t - sfxLastPlay[name] < SFX_THROTTLE_MS) return;
+    sfxLastPlay[name] = t;
+    try {
+      const src = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      src.buffer = sfxBuffers[name];
+      gain.gain.value = SFX_VOLUME[name] != null ? SFX_VOLUME[name] : 0.4;
+      src.connect(gain);
+      gain.connect(sfxMaster || ctx.destination);
+      src.start(0);
+    } catch (_) { /* ignore */ }
+  };
+  if (ctx.state === "suspended") {
+    ctx.resume().then(start).catch(() => {});
+    return;
+  }
+  start();
+}
+
+function playClickSfx() {
+  playSfx("click");
+}
+
+function sfxTargetFromEvent(e) {
+  const el = e.target && e.target.closest ? e.target.closest(SFX_CLICK_SEL + ",[data-sfx]") : null;
+  if (!el) return null;
+  if (el.disabled || el.getAttribute("aria-disabled") === "true") return null;
+  if (el.classList.contains("visually-hidden") || el.closest(".visually-hidden")) return null;
+  if (el.id === "btnSfxMute") return null;
+  return el;
+}
+
+function triggerUiSfx(el) {
+  if (!el || sfxMuted) return;
+  const custom = el.getAttribute("data-sfx");
+  if (custom) playSfx(custom);
+  else playClickSfx();
+}
+
+// 按下即播（比 click 早一整段），并顺带解锁音频
+document.addEventListener("pointerdown", (e) => {
+  if (e.button != null && e.button !== 0) return;
+  unlockSfx();
+  if (sfxMuted) return;
+  triggerUiSfx(sfxTargetFromEvent(e));
+}, true);
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  unlockSfx();
+  if (sfxMuted) return;
+  const el = sfxTargetFromEvent(e);
+  if (!el || (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+  triggerUiSfx(el);
+}, true);
+
+// 页面一进来就预取 WAV（不播放），后续点击即可即时出声
+preloadSfx();
 
 const SAMPLES = {
   zh: [
@@ -374,6 +604,9 @@ function showScreen(name, opts) {
   }
   if (name === "done" && prevScreen !== "done") {
     requestAnimationFrame(playDoneEnter);
+  } else if (prevScreen && prevScreen !== name) {
+    // 完成页用 done 音；其它切屏用轻导航音
+    playSfx("nav");
   }
 
   // 回到首页且开场已结束时，重播首页入场
@@ -443,6 +676,7 @@ function applyLang() {
     el.title = tip;
     if (el.id === "btnReplaySplash") el.setAttribute("aria-label", tip);
   });
+  syncMuteBtn();
 }
 
 function renderSamples() {
@@ -537,6 +771,7 @@ btnCopy.addEventListener("click", async () => {
   const text = parts.join("\n\n").trim();
   try {
     await navigator.clipboard.writeText(text);
+    playSfx("copy");
     btnCopy.textContent = t("copied");
     setTimeout(() => (btnCopy.textContent = t("copy")), 1200);
   } catch { alert(t("copyFailed")); }
@@ -930,6 +1165,7 @@ async function handleImageFile(file) {
       ocrStatus.classList.add("bad");
     }
     ocrStatus.textContent = status;
+    playSfx("ok");
   } catch { ocrStatus.textContent = t("netError"); ocrStatus.classList.add("bad"); }
 }
 
@@ -964,6 +1200,8 @@ function addBubble(role, text) {
   div.className = "bubble " + role;
   div.textContent = clean;
   chatLog.appendChild(div);
+  if (role === "hint") playSfx("hint");
+  else if (role === "ai") playSfx("pop");
   requestAnimationFrame(() => { chatLog.scrollTop = chatLog.scrollHeight; });
 }
 
@@ -1029,13 +1267,16 @@ function pulseHintBtn() {
   replayAnimClass($("btnHint"), "hint-pulse", 600);
 }
 
-function popFeedback() {
+function popFeedback(tag) {
   replayAnimClass($("feedback"), "pop", 400);
+  if (tag === "ok") playSfx("ok");
+  else if (tag === "bad") playSfx("bad");
 }
 
 function playDoneEnter() {
   // 保留 done-enter，避免庆祝对勾在动画结束后又被藏掉
   replayAnimClass(donePanel, "done-enter");
+  playSfx("done");
 }
 
 function cloneFigure(fig) {
@@ -1922,6 +2163,7 @@ function setBusy(on, label) {
   $("btnHint").disabled = on;
   $("btnStart").disabled = on;
   $("btnStart").textContent = on ? (label || t("thinking")) : t("confirm");
+  if (on) playSfx("think");
 }
 
 async function fetchJson(url, options, timeoutMs) {
@@ -1959,7 +2201,13 @@ async function startAiGuide() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }, 90000);
-    if (!data.ok) { startStatus.textContent = data.message || t("startFailed"); startStatus.classList.add("bad"); return; }
+    if (!data.ok) {
+      startStatus.textContent = data.message || t("startFailed");
+      startStatus.classList.add("bad");
+      playSfx("bad");
+      return;
+    }
+    playSfx("ok");
     sessionId = data.session_id;
     hasDoneSolution = false;
     if (data.geometry_description) currentGeometryDescription = data.geometry_description;
@@ -1989,12 +2237,13 @@ async function startAiGuide() {
       : t("started");
     feedback.textContent = data.feedback || t("defaultFeedback");
     feedback.className = "feedback ok";
-    popFeedback();
+    popFeedback("ok");
     if (data.completed) showDone(data.final_solution || data.message, data.review);
   } catch (err) {
     const aborted = err && err.name === "AbortError";
     startStatus.textContent = aborted ? t("timeoutStart") : t("reqFailed");
     startStatus.classList.add("bad");
+    playSfx("bad");
   } finally { setBusy(false); }
 }
 
@@ -2006,8 +2255,12 @@ async function sendReply(wantHint) {
   setBusy(true, wantHint ? t("thinking") : t("grading"));
   feedback.textContent = wantHint ? t("hintLoading") : t("gradingMsg");
   feedback.className = "feedback";
-  if (!wantHint) addBubble("student", answer.trim());
-  else addBubble("student", t("hintAsked"));
+  if (!wantHint) {
+    addBubble("student", answer.trim());
+    playSfx("send");
+  } else {
+    addBubble("student", t("hintAsked"));
+  }
   try {
     const data = await fetchJson("/api/ai/reply", {
       method: "POST",
@@ -2015,7 +2268,12 @@ async function sendReply(wantHint) {
       // 提示请求仍带上草稿作上下文；后端会走专用提示路径
       body: JSON.stringify({ session_id: sessionId, answer: answer, want_hint: wantHint }),
     }, 90000);
-    if (!data.ok) { feedback.textContent = data.message || t("submitFailed"); feedback.className = "feedback bad"; return; }
+    if (!data.ok) {
+      feedback.textContent = data.message || t("submitFailed");
+      feedback.className = "feedback bad";
+      playSfx("bad");
+      return;
+    }
 
     if (wantHint) {
       const hintText = (data.hint || data.message || data.feedback || "").trim();
@@ -2025,14 +2283,14 @@ async function sendReply(wantHint) {
       }
       feedback.textContent = data.feedback || hintText || t("hintReady");
       feedback.className = "feedback ok";
-      popFeedback();
+      popFeedback("ok");
       pulseHintBtn();
     } else {
       if (data.feedback) {
         const tag = data.is_correct === true ? "ok" : data.is_correct === false ? "bad" : "";
         feedback.textContent = data.feedback;
         feedback.className = "feedback " + tag;
-        if (tag) popFeedback();
+        if (tag) popFeedback(tag);
       }
       if (data.message) addBubble("ai", data.message);
       if (data.hint) {
@@ -2050,6 +2308,7 @@ async function sendReply(wantHint) {
     const aborted = err && err.name === "AbortError";
     feedback.textContent = aborted ? t("timeoutReply") : t("reqFailedRetry");
     feedback.className = "feedback bad";
+    playSfx("bad");
   } finally { setBusy(false); }
 }
 
@@ -2130,6 +2389,14 @@ if (langToggle) {
   });
 }
 
+const btnSfxMute = $("btnSfxMute");
+if (btnSfxMute) {
+  syncMuteBtn();
+  btnSfxMute.addEventListener("click", () => {
+    setSfxMuted(!sfxMuted);
+  });
+}
+
 let splashTimer = null;
 let logoTipTimer = null;
 let logoTipShownOnce = false;
@@ -2153,6 +2420,7 @@ function endSplash() {
     clearTimeout(splashTimer);
     splashTimer = null;
   }
+  playSfx("splash"); // 加载完成短音
   playHomeEnter();
   // 开场结束后轻提示：侧栏 Logo 可重播
   setTimeout(nudgeLogoTip, 280);
@@ -2177,6 +2445,8 @@ function playSplash() {
       void el.offsetWidth;
       el.style.animation = "";
     });
+  // 读条静音；结束时再播完成音。预加载保证结尾能即时出声
+  preloadSfx();
   if (splashTimer) clearTimeout(splashTimer);
   splashTimer = setTimeout(endSplash, reduced ? 400 : 2800);
 }
