@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Inter:wght@500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260721a" />
+  <link rel="stylesheet" href="/static/style.css?v=20260723a" />
 </head>
 <body>
   <div class="splash" id="splash" role="dialog" aria-label="开场动画">
@@ -274,8 +274,26 @@
 
         <button type="button" id="btnHint" class="btn-coral btn-hint" data-i18n="hint">卡住了，提示一下</button>
 
+        <div class="answer-camera" id="answerCameraPanel" hidden>
+          <video id="answerCameraVideo" autoplay playsinline muted></video>
+          <div class="answer-camera-actions">
+            <button type="button" id="btnAnswerSnap" class="btn-coral" data-i18n="answerSnap">拍照识别</button>
+            <label class="linkish answer-album">
+              <span data-i18n="answerAlbum">相册</span>
+              <input type="file" id="answerPhotoInput" accept="image/*" capture="environment" hidden />
+            </label>
+            <button type="button" id="btnAnswerCameraClose" class="linkish" data-i18n="closeCamera">关闭摄像头</button>
+          </div>
+        </div>
+
         <div class="answer-bar">
           <textarea id="answerBox" rows="1" placeholder=""></textarea>
+          <button type="button" id="btnAnswerPhoto" class="icon-btn answer-photo-btn" title="拍照识别" data-i18n-title="answerPhoto" aria-label="拍照识别答案">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 8h3l1.5-2h7L17 8h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/>
+              <circle cx="12" cy="14" r="3.2"/>
+            </svg>
+          </button>
           <button type="button" id="btnVoiceAnswer" class="icon-btn voice-btn" title="语音" data-i18n-title="voiceInput" aria-label="语音输入">
             <svg class="voice-icon-mic" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
             <span class="voice-icon-stop" aria-hidden="true"></span>
@@ -302,7 +320,7 @@
     </figure>
   </div>
 
-  <script src="/static/solid3d.js?v=20260721a"></script>
-  <script src="/static/app.js?v=20260721a"></script>
+  <script src="/static/solid3d.js?v=20260723a"></script>
+  <script src="/static/app.js?v=20260723a"></script>
 </body>
 </html>

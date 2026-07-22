@@ -61,6 +61,13 @@ const I18N = {
     startGuide: "确认",
     step2: "AI 引导",
     answerPlaceholder: "写下你的答案或思路（Enter 发送，Ctrl+Enter 换行）",
+    answerPhoto: "拍照识别答案",
+    answerSnap: "拍照识别",
+    answerAlbum: "相册",
+    answerOcrProcessing: "正在识别手写内容…",
+    answerOcrDone: "已填入识别文字",
+    answerOcrEmpty: "没有识别出文字，请再拍清楚一点",
+    answerOcrFailed: "识别失败，请重试",
     hint: "卡住了，提示一下",
     hintAsked: "（我卡住了，想要一个提示）",
     hintLoading: "正在想提示…",
@@ -184,6 +191,13 @@ const I18N = {
     startGuide: "Confirm",
     step2: "AI Guidance",
     answerPlaceholder: "Write your answer (Enter send, Ctrl+Enter newline)",
+    answerPhoto: "Photo OCR answer",
+    answerSnap: "Snap & OCR",
+    answerAlbum: "Album",
+    answerOcrProcessing: "Reading handwriting…",
+    answerOcrDone: "Text inserted",
+    answerOcrEmpty: "No text found. Try a clearer photo.",
+    answerOcrFailed: "OCR failed. Please retry.",
     hint: "I'm stuck, give me a hint",
     hintAsked: "(I'm stuck — please give a hint)",
     hintLoading: "Thinking of a hint…",
@@ -602,6 +616,7 @@ function showScreen(name, opts) {
   if (name === "search" || name === "guide") {
     placeWorkbenchForScreen(name);
   }
+  if (name !== "guide") closeAnswerCamera();
 
   if (name === "guide") {
     requestAnimationFrame(() => {
@@ -802,6 +817,140 @@ if ($("btnVoiceProblem")) {
 if ($("btnVoiceAnswer")) {
   $("btnVoiceAnswer").addEventListener("click", () => toggleVoiceInput("answer"));
 }
+
+let answerCameraStream = null;
+
+async function openAnswerCamera() {
+  const panel = $("answerCameraPanel");
+  const video = $("answerCameraVideo");
+  const btn = $("btnAnswerPhoto");
+  if (!panel || !video) return;
+  if (!panel.hidden && answerCameraStream) {
+    closeAnswerCamera();
+    return;
+  }
+  // 避免与搜题页摄像头抢设备
+  closeCamera();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    // 无摄像头 API 时直接打开相册/系统拍照
+    const input = $("answerPhotoInput");
+    if (input) input.click();
+    else alert(t("noCamera"));
+    return;
+  }
+  try {
+    answerCameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false,
+    });
+    panel.hidden = false;
+    video.srcObject = answerCameraStream;
+    if (btn) btn.classList.add("is-on");
+  } catch {
+    alert(t("cameraFailed"));
+    const input = $("answerPhotoInput");
+    if (input) input.click();
+  }
+}
+
+function closeAnswerCamera() {
+  if (answerCameraStream) {
+    answerCameraStream.getTracks().forEach((tr) => tr.stop());
+    answerCameraStream = null;
+  }
+  const video = $("answerCameraVideo");
+  if (video) video.srcObject = null;
+  const panel = $("answerCameraPanel");
+  if (panel) panel.hidden = true;
+  const btn = $("btnAnswerPhoto");
+  if (btn) btn.classList.remove("is-on");
+}
+
+async function snapAnswerFromCamera() {
+  const video = $("answerCameraVideo");
+  if (!video || !video.videoWidth) return alert(t("cameraNotReady"));
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.92));
+  if (!blob) return;
+  await ocrIntoAnswerBox(new File([blob], "answer.jpg", { type: "image/jpeg" }));
+}
+
+async function ocrIntoAnswerBox(file) {
+  const status = $("voiceAnswerStatus");
+  if (status) {
+    status.classList.remove("bad");
+    status.textContent = t("answerOcrProcessing");
+  }
+  const form = new FormData();
+  form.append("file", file, file.name || "answer.jpg");
+  try {
+    const res = await fetch("/api/ocr", { method: "POST", body: form });
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      if (status) {
+        status.textContent = t("answerOcrFailed") + `（HTTP ${res.status}）`;
+        status.classList.add("bad");
+      }
+      playSfx("bad");
+      return;
+    }
+    if (!data.ok) {
+      if (status) {
+        status.textContent = data.message || t("answerOcrFailed");
+        status.classList.add("bad");
+      }
+      playSfx("bad");
+      return;
+    }
+    const text = String(data.text || "").trim();
+    if (!text) {
+      if (status) {
+        status.textContent = t("answerOcrEmpty");
+        status.classList.add("bad");
+      }
+      playSfx("bad");
+      return;
+    }
+    const box = answerBox;
+    const base = (box.value || "").replace(/\s+$/, "");
+    box.value = base ? `${base}${base.endsWith("\n") ? "" : "\n"}${text}` : text;
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    resizeAnswerBox();
+    closeAnswerCamera();
+    if (status) {
+      status.classList.remove("bad");
+      status.textContent = t("answerOcrDone");
+    }
+    playSfx("ok");
+  } catch {
+    if (status) {
+      status.textContent = t("netError");
+      status.classList.add("bad");
+    }
+    playSfx("bad");
+  }
+}
+
+const btnAnswerPhoto = $("btnAnswerPhoto");
+if (btnAnswerPhoto) btnAnswerPhoto.addEventListener("click", openAnswerCamera);
+const btnAnswerSnap = $("btnAnswerSnap");
+if (btnAnswerSnap) btnAnswerSnap.addEventListener("click", snapAnswerFromCamera);
+const btnAnswerCameraClose = $("btnAnswerCameraClose");
+if (btnAnswerCameraClose) btnAnswerCameraClose.addEventListener("click", closeAnswerCamera);
+const answerPhotoInput = $("answerPhotoInput");
+if (answerPhotoInput) {
+  answerPhotoInput.addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) ocrIntoAnswerBox(file);
+    e.target.value = "";
+  });
+}
+
 btnStart.addEventListener("click", startAiGuide);
 btnSubmit.addEventListener("click", () => sendReply(false));
 btnHint.addEventListener("click", () => sendReply(true));
@@ -2315,6 +2464,10 @@ function setBusy(on, label) {
   $("btnHint").disabled = on;
   $("btnStart").disabled = on;
   $("btnStart").textContent = on ? (label || t("thinking")) : t("confirm");
+  const ap = $("btnAnswerPhoto");
+  const as = $("btnAnswerSnap");
+  if (ap) ap.disabled = on;
+  if (as) as.disabled = on;
   if (on) playSfx("think");
 }
 

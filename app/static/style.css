@@ -1156,6 +1156,42 @@ html, body {
   100% { transform: scale(1); opacity: 1; }
 }
 
+.answer-camera {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 0.65rem;
+  padding: 0.65rem;
+  background: #f3f6fb;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.answer-camera[hidden] { display: none !important; }
+.answer-camera video {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #0f172a;
+}
+.answer-camera-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.85rem;
+}
+.answer-album {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.answer-photo-btn {
+  color: var(--navy);
+}
+.answer-photo-btn.is-on {
+  background: var(--soft-blue);
+  color: var(--navy);
+}
+
 .answer-bar {
   display: flex;
   align-items: center;
